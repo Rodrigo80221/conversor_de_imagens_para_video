@@ -1,8 +1,11 @@
 [phases.setup]
-nixPkgs = ["python311", "ffmpeg", "glibc", "gcc"]
+# REMOVIDO "glibc" para evitar conflitos. 
+# O sistema já traz a versão correta compatível com o python311 e ffmpeg.
+nixPkgs = ["python311", "ffmpeg", "gcc"]
 
 [phases.install]
-cmds = ["python -m pip install -r requirements.txt"]
+# Forçamos o uso do 'python3' para garantir que ele pegue o 3.11 instalado acima
+cmds = ["python3 -m pip install --upgrade pip", "python3 -m pip install -r requirements.txt"]
 
 [start]
 cmd = "uvicorn main:app --host 0.0.0.0 --port 80"
