@@ -10,6 +10,7 @@ import os
 from pathlib import Path
 import zipfile
 import video_engine
+import music_engine
 
 app = FastAPI()
 
@@ -84,6 +85,34 @@ async def generate_video(
             output_path, 
             media_type="video/mp4", 
             filename="generated_video.mp4"
+        )
+
+    except Exception as e:
+        shutil.rmtree(temp_dir)
+        return {"error": str(e)}
+
+@app.post("/generate-music")
+async def generate_music(
+    background_tasks: BackgroundTasks,
+    prompt: str = Form(...),
+    duration: int = Form(25)
+):
+    temp_dir = tempfile.mkdtemp()
+    try:
+        output_filename = "generated_music.mp3"
+        output_path = os.path.join(temp_dir, output_filename)
+        
+        music_engine.generate_music(prompt, duration, Path(output_path))
+        
+        if not os.path.exists(output_path):
+             shutil.rmtree(temp_dir)
+             return {"error": "Music generation failed"}
+
+        background_tasks.add_task(cleanup_temp_dir, temp_dir)
+        return FileResponse(
+            output_path, 
+            media_type="audio/mpeg", 
+            filename="generated_music.mp3"
         )
 
     except Exception as e:
