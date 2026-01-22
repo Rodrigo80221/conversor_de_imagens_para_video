@@ -147,7 +147,7 @@ def build_ffmpeg_command(cfg: Dict, base_dir: Path, out_path: Path) -> List[str]
 
         out_label = f"v{i}"
         fc_parts.append(
-            f"[{i}:v]{vf},trim=duration={dur},setpts=PTS-STARTPTS[{out_label}]"
+            f"[{i}:v]{vf},trim=duration={dur},setpts=PTS-STARTPTS,fps={fps}[{out_label}]"
         )
         labels.append(out_label)
 
