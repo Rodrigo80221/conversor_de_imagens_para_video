@@ -193,4 +193,9 @@ def build_ffmpeg_command(cfg: Dict, base_dir: Path, out_path: Path) -> List[str]
 def generate_video_from_config(cfg: Dict, base_dir: Path, output_file: Path):
     cmd = build_ffmpeg_command(cfg, base_dir, output_file)
     print("Running ffmpeg:", " ".join(cmd))
-    subprocess.run(cmd, check=True)
+    
+    try:
+        subprocess.run(cmd, check=True, capture_output=True, text=True)
+    except subprocess.CalledProcessError as e:
+        # Re-raise with stderr info so we know WHY it failed (e.g. unknown filter xfade)
+        raise RuntimeError(f"FFmpeg failed with exit code {e.returncode}.\nStderr: {e.stderr}") from e
