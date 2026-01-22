@@ -1,11 +1,15 @@
+# Definimos a versão do Python via variável. 
+# Isso faz o sistema automático usar a 3.11 nativamente, evitando conflito com a 3.12.
+[variables]
+NIXPACKS_PYTHON_VERSION = "3.11"
+
 [phases.setup]
-# AQUI ESTAVA O ERRO: Não use "python3" e "python311" juntos.
-# Usamos apenas "python311" para garantir uma única versão compatível.
-nixPkgs = ["python311", "ffmpeg", "gcc"]
+# Apenas bibliotecas EXTRAS aqui. O Python será instalado automaticamente pela variável acima.
+# Removemos 'python311' desta lista para não duplicar.
+nixPkgs = ["ffmpeg", "gcc"]
 
 [phases.install]
-# O comando pip garante que usamos o python3.11 instalado acima
-cmds = ["python3 -m pip install --upgrade pip", "python3 -m pip install -r requirements.txt"]
+cmds = ["python -m pip install --upgrade pip", "python -m pip install -r requirements.txt"]
 
 [start]
 cmd = "uvicorn main:app --host 0.0.0.0 --port 80"
