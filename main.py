@@ -1,4 +1,5 @@
 from fastapi import FastAPI, UploadFile, File, Form, BackgroundTasks
+from typing import Optional
 from fastapi.responses import FileResponse
 import uvicorn
 import io
@@ -113,6 +114,69 @@ async def generate_music(
             output_path, 
             media_type="audio/mpeg", 
             filename="generated_music.mp3"
+        )
+
+    except Exception as e:
+        shutil.rmtree(temp_dir)
+        return {"error": str(e)}
+
+@app.post("/merge-video-audio")
+async def merge_video_audio_endpoint(
+    background_tasks: BackgroundTasks,
+    video_file: UploadFile = File(...),
+    narration_file: Optional[UploadFile] = File(None),
+    background_file: Optional[UploadFile] = File(None),
+    vol_narration: float = Form(1.0),
+    vol_background: float = Form(0.1),
+    fade_duration: float = Form(2.0)
+):
+    temp_dir = tempfile.mkdtemp()
+    try:
+        # Save video file
+        video_path = os.path.join(temp_dir, "input_video.mp4")
+        with open(video_path, "wb") as f:
+            f.write(await video_file.read())
+            
+        narration_path = None
+        if narration_file:
+            # Pega extensão original ou assume wav
+            # Se filename for None (raro), usa .wav
+            original_ext = os.path.splitext(narration_file.filename)[1] if narration_file.filename else ""
+            ext = original_ext or ".wav"
+            narration_path = os.path.join(temp_dir, f"narration{ext}")
+            with open(narration_path, "wb") as f:
+                f.write(await narration_file.read())
+                
+        background_path = None
+        if background_file:
+            original_ext = os.path.splitext(background_file.filename)[1] if background_file.filename else ""
+            ext = original_ext or ".mp3"
+            background_path = os.path.join(temp_dir, f"background{ext}")
+            with open(background_path, "wb") as f:
+                f.write(await background_file.read())
+                
+        output_filename = "merged_output.mp4"
+        output_path = os.path.join(temp_dir, output_filename)
+        
+        video_engine.merge_video_audio(
+            video_input=Path(video_path),
+            output_file=Path(output_path),
+            narration_input=Path(narration_path) if narration_path else None,
+            background_input=Path(background_path) if background_path else None,
+            vol_narration=vol_narration,
+            vol_background=vol_background,
+            fade_duration=fade_duration
+        )
+        
+        if not os.path.exists(output_path):
+             shutil.rmtree(temp_dir)
+             return {"error": "Merge failed (no output file created)"}
+
+        background_tasks.add_task(cleanup_temp_dir, temp_dir)
+        return FileResponse(
+            output_path, 
+            media_type="video/mp4", 
+            filename="merged_video.mp4"
         )
 
     except Exception as e:
