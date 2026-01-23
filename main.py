@@ -48,6 +48,7 @@ def cleanup_temp_dir(path: str):
 async def generate_video(
     background_tasks: BackgroundTasks,
     config: str = Form(...),
+    cover_file: UploadFile = File(...),
     file: UploadFile = File(...)
 ):
     try:
@@ -59,6 +60,14 @@ async def generate_video(
     temp_dir = tempfile.mkdtemp()
     
     try:
+        # Save cover file
+        # Usamos o nome original do arquivo para que o JSON possa referenciá-lo corretamente
+        # ou, se o usuário preferir, poderíamos renomear para 'cover.jpg'.
+        # Vou manter o nome original para flexibilidade, mas certifique-se que o JSON usa esse nome.
+        cover_path = os.path.join(temp_dir, cover_file.filename)
+        with open(cover_path, "wb") as f:
+            f.write(await cover_file.read())
+
         # Save zip
         zip_path = os.path.join(temp_dir, "data.zip")
         with open(zip_path, "wb") as f:
