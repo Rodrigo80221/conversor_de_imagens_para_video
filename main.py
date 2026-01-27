@@ -225,14 +225,15 @@ async def add_subtitles_endpoint(
         # 8: Top Center
         # 5: Center
         # 2: Bottom Center
+        # Tuple: (Alignment, MarginV)
         align_map = {
-            SubtitlePosition.top: 8,
-            SubtitlePosition.top_center: 8,
-            SubtitlePosition.center: 5,
-            SubtitlePosition.bottom_center: 2,
-            SubtitlePosition.bottom: 2
+            SubtitlePosition.top: (8, 10),
+            SubtitlePosition.top_center: (8, 60),
+            SubtitlePosition.center: (5, 10),
+            SubtitlePosition.bottom_center: (2, 60),
+            SubtitlePosition.bottom: (2, 10)
         }
-        alignment = align_map.get(position, 2)
+        alignment, margin_v = align_map.get(position, (2, 10))
         
         output_filename = "video_with_subs.mp4"
         output_path = os.path.join(temp_dir, output_filename)
@@ -241,7 +242,8 @@ async def add_subtitles_endpoint(
             video_input=Path(video_path),
             srt_input=Path(srt_path),
             output_file=Path(output_path),
-            alignment=alignment
+            alignment=alignment,
+            margin_vertical=margin_v
         )
         
         if not os.path.exists(output_path):

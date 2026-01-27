@@ -404,11 +404,13 @@ def add_subtitles(
     video_input: Path,
     srt_input: Path,
     output_file: Path,
-    alignment: int = 2
+    alignment: int = 2,
+    margin_vertical: int = 10
 ):
     """
     Burn subtitles into video using ffmpeg.
     alignment: 2 (Bottom Center), 8 (Top Center), 5 (Center)... (ASS format)
+    margin_vertical: Vertical margin in pixels.
     """
     
     # FFmpeg subtitles filter requires escaping of Windows paths
@@ -436,7 +438,7 @@ def add_subtitles(
     # Center-Left: 4, Center: 5, Center-Right: 6
     # Bottom-Left: 1, Bottom-Center: 2, Bottom-Right: 3
     
-    force_style = f"Alignment={alignment},Fontsize=24,PrimaryColour=&H00FFFFFF,OutlineColour=&H00000000,BorderStyle=1,Outline=1,Shadow=0"
+    force_style = f"Alignment={alignment},MarginV={margin_vertical},Fontsize=24,PrimaryColour=&H00FFFFFF,OutlineColour=&H00000000,BorderStyle=1,Outline=1,Shadow=0"
     
     # 'subtitles=filename:force_style=...'
     vf_arg = f"subtitles='{path_str}':force_style='{force_style}'"
