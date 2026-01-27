@@ -1,5 +1,6 @@
 from fastapi import FastAPI, UploadFile, File, Form, BackgroundTasks
 from typing import Optional
+from enum import Enum
 from fastapi.responses import FileResponse
 import uvicorn
 import io
@@ -186,6 +187,72 @@ async def merge_video_audio_endpoint(
             output_path, 
             media_type="video/mp4", 
             filename="merged_video.mp4"
+        )
+
+    except Exception as e:
+        shutil.rmtree(temp_dir)
+        return {"error": str(e)}
+
+class SubtitlePosition(str, Enum):
+    top = "top"
+    top_center = "top-center"
+    center = "center"
+    bottom_center = "bottom-center"
+    bottom = "bottom"
+
+@app.post("/add-subtitles")
+async def add_subtitles_endpoint(
+    background_tasks: BackgroundTasks,
+    video_file: UploadFile = File(...),
+    subtitle_content: str = Form(...),
+    position: SubtitlePosition = Form(...)
+):
+    temp_dir = tempfile.mkdtemp()
+    try:
+        # Save video
+        # We try to keep original extension or default to mp4
+        orig_ext = os.path.splitext(video_file.filename)[1] if video_file.filename else ".mp4"
+        video_path = os.path.join(temp_dir, f"input_video{orig_ext}")
+        with open(video_path, "wb") as f:
+            f.write(await video_file.read())
+            
+        # Save SRT
+        srt_path = os.path.join(temp_dir, "subtitles.srt")
+        with open(srt_path, "w", encoding="utf-8") as f:
+            f.write(subtitle_content)
+            
+        # Map position to Alignment
+        # 8: Top Center
+        # 5: Center
+        # 2: Bottom Center
+        align_map = {
+            SubtitlePosition.top: 8,
+            SubtitlePosition.top_center: 8,
+            SubtitlePosition.center: 5,
+            SubtitlePosition.bottom_center: 2,
+            SubtitlePosition.bottom: 2
+        }
+        alignment = align_map.get(position, 2)
+        
+        output_filename = "video_with_subs.mp4"
+        output_path = os.path.join(temp_dir, output_filename)
+        
+        video_engine.add_subtitles(
+            video_input=Path(video_path),
+            srt_input=Path(srt_path),
+            output_file=Path(output_path),
+            alignment=alignment
+        )
+        
+        if not os.path.exists(output_path):
+             shutil.rmtree(temp_dir)
+             return {"error": "Subtitle addition failed (no output file created)"}
+
+        background_tasks.add_task(cleanup_temp_dir, temp_dir)
+        return FileResponse(
+            output_path, 
+            media_type="video/mp4", 
+            filename="video_subbed.mp4"
         )
 
     except Exception as e:

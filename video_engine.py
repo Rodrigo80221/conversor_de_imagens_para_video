@@ -399,3 +399,59 @@ def merge_video_audio(
         subprocess.run(cmd, check=True, capture_output=True, text=True)
     except subprocess.CalledProcessError as e:
         raise RuntimeError(f"FFmpeg merge failed.\nStderr: {e.stderr}") from e
+
+def add_subtitles(
+    video_input: Path,
+    srt_input: Path,
+    output_file: Path,
+    alignment: int = 2
+):
+    """
+    Burn subtitles into video using ffmpeg.
+    alignment: 2 (Bottom Center), 8 (Top Center), 5 (Center)... (ASS format)
+    """
+    
+    # FFmpeg subtitles filter requires escaping of Windows paths
+    # e.g. C:\path\to\file.srt -> C\:\\path\\to\\file.srt
+    # But usually just converting \ to / works fine in ffmpeg if we can.
+    # However, 'subtitles' filter is tricky with paths.
+    
+    # Best practice for Windows paths in filter string:
+    # 1. Use relative path if possible (cwd) -> safest but complex to manage CWD.
+    # 2. Escape colons and backslashes.
+    
+    path_str = str(srt_input).replace("\\", "/")
+    # Escape colon (e.g. C:/ -> C\:/)
+    path_str = path_str.replace(":", "\\:")
+    
+    # force_style allows us to set Alignment, Font, Size etc.
+    # Alignment=2 is Bottom Center used by default in many players.
+    # Alignment=6 is Top Center? No, ASS Key:
+    # 7 8 9
+    # 4 5 6
+    # 1 2 3
+    
+    # So:
+    # Top-Left: 7, Top-Center: 8, Top-Right: 9
+    # Center-Left: 4, Center: 5, Center-Right: 6
+    # Bottom-Left: 1, Bottom-Center: 2, Bottom-Right: 3
+    
+    force_style = f"Alignment={alignment},Fontsize=24,PrimaryColour=&H00FFFFFF,OutlineColour=&H00000000,BorderStyle=1,Outline=1,Shadow=0"
+    
+    # 'subtitles=filename:force_style=...'
+    vf_arg = f"subtitles='{path_str}':force_style='{force_style}'"
+    
+    cmd = [
+        "ffmpeg", "-y",
+        "-i", str(video_input),
+        "-vf", vf_arg,
+        "-c:a", "copy", # Copy audio without re-encoding
+        str(output_file)
+    ]
+    
+    print("Running ffmpeg (subtitles):", " ".join(cmd))
+    try:
+        subprocess.run(cmd, check=True, capture_output=True, text=True)
+    except subprocess.CalledProcessError as e:
+        # Standard error usually contains the ffmpeg log
+        raise RuntimeError(f"FFmpeg subtitles failed.\nStderr: {e.stderr}") from e
