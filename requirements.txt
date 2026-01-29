@@ -3,3 +3,5 @@ uvicorn
 python-multipart
 replicate
 requests
+openai-whisper
+torch

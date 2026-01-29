@@ -5,6 +5,10 @@ from typing import Dict, List, Tuple, Optional
 import wave
 import contextlib
 import os
+import whisper
+import warnings
+import math
+
 
 COMMON_EXTS = [".png", ".jpg", ".jpeg", ".webp"]
 
@@ -457,3 +461,69 @@ def add_subtitles(
     except subprocess.CalledProcessError as e:
         # Standard error usually contains the ffmpeg log
         raise RuntimeError(f"FFmpeg subtitles failed.\nStderr: {e.stderr}") from e
+
+
+def generate_subtitles(
+    audio_path: Path,
+    output_srt_path: Path,
+    words_per_line: int = 5,
+    model_size: str = "medium"
+):
+    """
+    Generates an SRT file from an audio file using OpenAI Whisper.
+    Groups words based on words_per_line constraint.
+    """
+    
+    warnings.filterwarnings("ignore")
+    
+    print(f"Loading Whisper model ({model_size})...")
+    model = whisper.load_model(model_size)
+    
+    print("Transcribing audio...")
+    # Using word_timestamps=True to get word-level precision
+    result = model.transcribe(str(audio_path), language="pt", word_timestamps=True)
+    
+    def fmt(t):
+        h = int(t // 3600)
+        m = int((t % 3600) // 60)
+        s = int(t % 60)
+        ms = int((t - int(t)) * 1000)
+        return f"{h:02d}:{m:02d}:{s:02d},{ms:03d}"
+
+    lines_srt = []
+    counter = 1
+    
+    all_words = []
+    for seg in result["segments"]:
+        if 'words' in seg:
+            for w in seg['words']:
+                all_words.append(w)
+
+    # Group words
+    current_group = []
+    
+    for i, word_info in enumerate(all_words):
+        text = word_info['word'].strip()
+        if not text:
+            continue
+            
+        current_group.append(word_info)
+        
+        # Check if we reached the limit or it's the last word
+        if len(current_group) >= words_per_line or i == len(all_words) - 1:
+            start_time = current_group[0]['start']
+            end_time = current_group[-1]['end']
+            text_content = " ".join([w['word'].strip() for w in current_group])
+            
+            lines_srt.append(str(counter))
+            lines_srt.append(f"{fmt(start_time)} --> {fmt(end_time)}")
+            lines_srt.append(text_content)
+            lines_srt.append("")
+            
+            counter += 1
+            current_group = []
+
+    output_srt_path.write_text("\n".join(lines_srt), encoding="utf-8")
+    print(f"Subtitles generated at: {output_srt_path}")
+    return output_srt_path
+

@@ -261,5 +261,70 @@ async def add_subtitles_endpoint(
         shutil.rmtree(temp_dir)
         return {"error": str(e)}
 
+@app.post("/auto-subtitles")
+async def auto_subtitles_endpoint(
+    background_tasks: BackgroundTasks,
+    video_file: UploadFile = File(...),
+    words_per_line: int = Form(5),
+    position: SubtitlePosition = Form(...)
+):
+    temp_dir = tempfile.mkdtemp()
+    try:
+        # Save video
+        orig_ext = os.path.splitext(video_file.filename)[1] if video_file.filename else ".mp4"
+        video_path = os.path.join(temp_dir, f"input_video{orig_ext}")
+        with open(video_path, "wb") as f:
+            f.write(await video_file.read())
+            
+        # Generate subtitles using Whisper
+        srt_path = os.path.join(temp_dir, "generated_subtitles.srt")
+        try:
+            video_engine.generate_subtitles(
+                audio_path=Path(video_path),
+                output_srt_path=Path(srt_path),
+                words_per_line=words_per_line
+            )
+        except Exception as e:
+            # Check if it was because of missing torch/whisper or model loading
+            # But we just wrap and return error
+            raise RuntimeError(f"Subtitle generation failed: {e}")
+
+        # Map position to Alignment for add_subtitles
+        align_map = {
+            SubtitlePosition.top: (8, 10),
+            SubtitlePosition.top_center: (8, 60),
+            SubtitlePosition.center: (5, 10),
+            SubtitlePosition.bottom_center: (2, 60),
+            SubtitlePosition.bottom: (2, 10)
+        }
+        alignment, margin_v = align_map.get(position, (2, 10))
+        
+        output_filename = "video_with_autogen_subs.mp4"
+        output_path = os.path.join(temp_dir, output_filename)
+        
+        video_engine.add_subtitles(
+            video_input=Path(video_path),
+            srt_input=Path(srt_path),
+            output_file=Path(output_path),
+            alignment=alignment,
+            margin_vertical=margin_v
+        )
+        
+        if not os.path.exists(output_path):
+             shutil.rmtree(temp_dir)
+             return {"error": "Subtitle addition failed (no output file created)"}
+
+        background_tasks.add_task(cleanup_temp_dir, temp_dir)
+        return FileResponse(
+            output_path, 
+            media_type="video/mp4", 
+            filename="video_autogen_subs.mp4"
+        )
+
+    except Exception as e:
+        shutil.rmtree(temp_dir)
+        return {"error": str(e)}
+
 if __name__ == "__main__":
+
     uvicorn.run(app, host="0.0.0.0", port=80)
