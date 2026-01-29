@@ -465,13 +465,14 @@ def add_subtitles(
 
 def generate_subtitles(
     audio_path: Path,
-    output_srt_path: Path,
+    output_srt_path: Optional[Path] = None,
     words_per_line: int = 5,
     model_size: str = "medium"
-):
+) -> str:
     """
-    Generates an SRT file from an audio file using OpenAI Whisper.
+    Generates an SRT string from an audio file using OpenAI Whisper.
     Groups words based on words_per_line constraint.
+    If output_srt_path is provided, also saves to file.
     """
     
     warnings.filterwarnings("ignore")
@@ -523,7 +524,11 @@ def generate_subtitles(
             counter += 1
             current_group = []
 
-    output_srt_path.write_text("\n".join(lines_srt), encoding="utf-8")
-    print(f"Subtitles generated at: {output_srt_path}")
-    return output_srt_path
+    srt_content = "\n".join(lines_srt)
+    
+    if output_srt_path:
+        output_srt_path.write_text(srt_content, encoding="utf-8")
+        print(f"Subtitles generated at: {output_srt_path}")
+        
+    return srt_content
 
