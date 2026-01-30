@@ -205,7 +205,10 @@ async def add_subtitles_endpoint(
     background_tasks: BackgroundTasks,
     video_file: UploadFile = File(...),
     subtitle_content: str = Form(...),
-    position: SubtitlePosition = Form(...)
+    position: SubtitlePosition = Form(...),
+    font_color: str = Form("#FFFFFF"),
+    font_border_color: str = Form("#000000"),
+    font_size: int = Form(24)
 ):
     temp_dir = tempfile.mkdtemp()
     try:
@@ -243,7 +246,10 @@ async def add_subtitles_endpoint(
             srt_input=Path(srt_path),
             output_file=Path(output_path),
             alignment=alignment,
-            margin_vertical=margin_v
+            margin_vertical=margin_v,
+            font_color=font_color,
+            outline_color=font_border_color,
+            font_size=font_size
         )
         
         if not os.path.exists(output_path):

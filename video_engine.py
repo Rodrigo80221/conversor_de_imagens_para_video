@@ -404,17 +404,40 @@ def merge_video_audio(
     except subprocess.CalledProcessError as e:
         raise RuntimeError(f"FFmpeg merge failed.\nStderr: {e.stderr}") from e
 
+def color_to_ass(hex_color: str) -> str:
+    """
+    Converts hex color (#RRGGBB) to ASS format (&H00BBGGRR).
+    Assumes opaque alpha (00).
+    """
+    hex_color = hex_color.lstrip('#')
+    if len(hex_color) != 6:
+        # Fallback default if invalid
+        return "&H00FFFFFF" 
+    
+    r = hex_color[0:2]
+    g = hex_color[2:4]
+    b = hex_color[4:6]
+    
+    # ASS format: &H00BBGGRR (BGR order)
+    return f"&H00{b}{g}{r}"
+
 def add_subtitles(
     video_input: Path,
     srt_input: Path,
     output_file: Path,
     alignment: int = 2,
-    margin_vertical: int = 10
+    margin_vertical: int = 10,
+    font_color: str = "#FFFFFF",
+    outline_color: str = "#000000",
+    font_size: int = 24
 ):
     """
     Burn subtitles into video using ffmpeg.
     alignment: 2 (Bottom Center), 8 (Top Center), 5 (Center)... (ASS format)
     margin_vertical: Vertical margin in pixels.
+    font_color: Hex color string (#RRGGBB)
+    outline_color: Hex color string (#RRGGBB)
+    font_size: Font size in pixels (default 24)
     """
     
     # FFmpeg subtitles filter requires escaping of Windows paths
@@ -430,6 +453,9 @@ def add_subtitles(
     # Escape colon (e.g. C:/ -> C\:/)
     path_str = path_str.replace(":", "\\:")
     
+    primary_colour = color_to_ass(font_color)
+    outline_colour_ass = color_to_ass(outline_color)
+    
     # force_style allows us to set Alignment, Font, Size etc.
     # Alignment=2 is Bottom Center used by default in many players.
     # Alignment=6 is Top Center? No, ASS Key:
@@ -442,7 +468,11 @@ def add_subtitles(
     # Center-Left: 4, Center: 5, Center-Right: 6
     # Bottom-Left: 1, Bottom-Center: 2, Bottom-Right: 3
     
-    force_style = f"Alignment={alignment},MarginV={margin_vertical},Fontsize=24,PrimaryColour=&H00FFFFFF,OutlineColour=&H00000000,BorderStyle=1,Outline=1,Shadow=0"
+    force_style = (
+        f"Alignment={alignment},MarginV={margin_vertical},Fontsize={font_size},"
+        f"PrimaryColour={primary_colour},OutlineColour={outline_colour_ass},"
+        "BorderStyle=1,Outline=1,Shadow=0"
+    )
     
     # 'subtitles=filename:force_style=...'
     vf_arg = f"subtitles='{path_str}':force_style='{force_style}'"
