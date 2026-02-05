@@ -193,21 +193,14 @@ async def merge_video_audio_endpoint(
         shutil.rmtree(temp_dir)
         return {"error": str(e)}
 
-class SubtitlePosition(str, Enum):
-    top = "top"
-    top_center = "top-center"
-    center = "center"
-    bottom_center = "bottom-center"
-    bottom = "bottom"
-
 @app.post("/add-subtitles")
 async def add_subtitles_endpoint(
     background_tasks: BackgroundTasks,
     video_file: UploadFile = File(...),
     subtitle_content: str = Form(...),
-    position: SubtitlePosition = Form(...),
+    position_y: int = Form(0), # 0 = Center, + = Up, - = Down
     font_color: str = Form("#FFFFFF"),
-    font_border_color: str = Form("#000000"),
+    outline_color: str = Form("#000000"),
     font_size: int = Form(24)
 ):
     temp_dir = tempfile.mkdtemp()
@@ -224,23 +217,6 @@ async def add_subtitles_endpoint(
         with open(srt_path, "w", encoding="utf-8") as f:
             f.write(subtitle_content)
             
-        # Map position to Alignment
-        # 8: Top Center (ASS) / 6 (Legacy SSA)
-        # 5: Center (ASS)
-        # 2: Bottom Center (ASS/SSA)
-        # It seems ffmpeg/srt defaults to Legacy SSA alignment for SRT without header?
-        # User reported 8 showing as Middle-Left (4?).
-        # Trying 6 (Top-Center in Legacy SSA).
-        
-        align_map = {
-            SubtitlePosition.top: (6, 10),
-            SubtitlePosition.top_center: (6, 60),
-            SubtitlePosition.center: (5, 10),
-            SubtitlePosition.bottom_center: (2, 60),
-            SubtitlePosition.bottom: (2, 10)
-        }
-        alignment, margin_v = align_map.get(position, (2, 10))
-        
         output_filename = "video_with_subs.mp4"
         output_path = os.path.join(temp_dir, output_filename)
         
@@ -248,10 +224,9 @@ async def add_subtitles_endpoint(
             video_input=Path(video_path),
             srt_input=Path(srt_path),
             output_file=Path(output_path),
-            alignment=alignment,
-            margin_vertical=margin_v,
+            vertical_pos=position_y,
             font_color=font_color,
-            outline_color=font_border_color,
+            outline_color=outline_color,
             font_size=font_size
         )
         

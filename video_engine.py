@@ -404,6 +404,50 @@ def merge_video_audio(
     except subprocess.CalledProcessError as e:
         raise RuntimeError(f"FFmpeg merge failed.\nStderr: {e.stderr}") from e
 
+def get_video_dimensions(fpath: Path) -> Tuple[int, int]:
+    try:
+        cmd = [
+            "ffprobe", "-v", "error", 
+            "-select_streams", "v:0",
+            "-show_entries", "stream=width,height", 
+            "-of", "csv=s=x:p=0", 
+            str(fpath)
+        ]
+        result = subprocess.run(cmd, capture_output=True, text=True, check=True)
+        # Output format: "widthxheight" or "width\n" ? 
+        # With csv=s=x:p=0, output is "widthxheight" usually if multiple entries, 
+        # but with separate entries it might be "width\nheight" depending on version/flags but usually "widthxheight" if strict
+        # Actually with -of csv, default separator is comma. s=x sets it to 'x'.
+        # Let's parse carefully.
+        output = result.stdout.strip()
+        if "x" in output:
+             w, h = output.split("x")
+        else:
+             # Fallback if csv behavior varies
+             parts = output.split()
+             if len(parts) >= 2: # unlikely with p=0 but possible
+                 w, h = parts[0], parts[1]
+             else:
+                 # Maybe newlines?
+                 # Let's try json which is safer
+                 raise ValueError("CSV parse failed")
+                 
+        return int(w), int(h)
+    except Exception:
+        # Retry with JSON format which is more robust
+        cmd = [
+            "ffprobe", "-v", "error", 
+            "-select_streams", "v:0",
+            "-show_entries", "stream=width,height", 
+            "-of", "json", 
+            str(fpath)
+        ]
+        result = subprocess.run(cmd, capture_output=True, text=True, check=True)
+        data = json.loads(result.stdout)
+        width = data["streams"][0]["width"]
+        height = data["streams"][0]["height"]
+        return int(width), int(height)
+
 def color_to_ass(hex_color: str) -> str:
     """
     Converts hex color (#RRGGBB) to ASS format (&H00BBGGRR).
@@ -425,19 +469,17 @@ def add_subtitles(
     video_input: Path,
     srt_input: Path,
     output_file: Path,
-    alignment: int = 2,
-    margin_vertical: int = 10,
+    vertical_pos: int = 0, # 0 = Center, + = Up, - = Down
     font_color: str = "#FFFFFF",
     outline_color: str = "#000000",
     font_size: int = 24
 ):
     """
     Burn subtitles into video using ffmpeg.
-    alignment: 2 (Bottom Center), 8 (Top Center), 5 (Center)... (ASS format)
-    margin_vertical: Vertical margin in pixels.
-    font_color: Hex color string (#RRGGBB)
-    outline_color: Hex color string (#RRGGBB)
-    font_size: Font size in pixels (default 24)
+    vertical_pos: Distance from center in pixels. 
+                  Positive = Above Center (Moves Up).
+                  Negative = Below Center (Moves Down).
+                  0 = Exact Center.
     """
     
     # FFmpeg subtitles filter on Windows has path issues (drive letters).
@@ -447,12 +489,38 @@ def add_subtitles(
     # We will run subprocess with cwd = srt_input.parent
     srt_filename = srt_input.name
     
+    # Get Video Height to calculate margin
+    try:
+        width, height = get_video_dimensions(video_input)
+    except Exception as e:
+        print(f"Warning: Could not determine video dimensions ({e}). Defaulting to standard margins.")
+        height = 1920 # Fallback
+        
+    # Logic:
+    # We use Alignment=2 (Bottom Center).
+    # At alignments 1,2,3, MarginV is distance from Bottom.
+    # Center Y = height / 2.
+    # User wants: Position Y (from center) = vertical_pos. 
+    # (assuming standard coordinate system where +Y is UP from center? User said "Positive ABOVE middle")
+    #
+    # If using Bottom Reference (y=0 is bottom):
+    # Center y = H/2.
+    # Target y = H/2 + vertical_pos.
+    # MarginV (distance from bottom) = Target y = H/2 + vertical_pos.
+    
+    margin_v = int((height / 2) + vertical_pos)
+    
+    # Clamp just in case? explicit margin can be negative in ASS but let's keep it safe?
+    # Actually ASS allows negative margins to push off screen, but usually we want visible.
+    
+    alignment = 2 # Bottom Center
+    
     primary_colour = color_to_ass(font_color)
     outline_colour_ass = color_to_ass(outline_color)
     
     # force_style allows us to set Alignment, Font, Size etc.
     force_style = (
-        f"Alignment={alignment},MarginV={margin_vertical},Fontsize={font_size},"
+        f"Alignment={alignment},MarginV={margin_v},Fontsize={font_size},"
         f"PrimaryColour={primary_colour},OutlineColour={outline_colour_ass},"
         "BorderStyle=1,Outline=1,Shadow=0"
     )
