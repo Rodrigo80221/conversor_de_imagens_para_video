@@ -225,13 +225,16 @@ async def add_subtitles_endpoint(
             f.write(subtitle_content)
             
         # Map position to Alignment
-        # 8: Top Center
-        # 5: Center
-        # 2: Bottom Center
-        # Tuple: (Alignment, MarginV)
+        # 8: Top Center (ASS) / 6 (Legacy SSA)
+        # 5: Center (ASS)
+        # 2: Bottom Center (ASS/SSA)
+        # It seems ffmpeg/srt defaults to Legacy SSA alignment for SRT without header?
+        # User reported 8 showing as Middle-Left (4?).
+        # Trying 6 (Top-Center in Legacy SSA).
+        
         align_map = {
-            SubtitlePosition.top: (8, 10),
-            SubtitlePosition.top_center: (8, 60),
+            SubtitlePosition.top: (6, 10),
+            SubtitlePosition.top_center: (6, 60),
             SubtitlePosition.center: (5, 10),
             SubtitlePosition.bottom_center: (2, 60),
             SubtitlePosition.bottom: (2, 10)
