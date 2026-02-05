@@ -409,44 +409,49 @@ def get_video_dimensions(fpath: Path) -> Tuple[int, int]:
         cmd = [
             "ffprobe", "-v", "error", 
             "-select_streams", "v:0",
-            "-show_entries", "stream=width,height", 
-            "-of", "csv=s=x:p=0", 
-            str(fpath)
-        ]
-        result = subprocess.run(cmd, capture_output=True, text=True, check=True)
-        # Output format: "widthxheight" or "width\n" ? 
-        # With csv=s=x:p=0, output is "widthxheight" usually if multiple entries, 
-        # but with separate entries it might be "width\nheight" depending on version/flags but usually "widthxheight" if strict
-        # Actually with -of csv, default separator is comma. s=x sets it to 'x'.
-        # Let's parse carefully.
-        output = result.stdout.strip()
-        if "x" in output:
-             w, h = output.split("x")
-        else:
-             # Fallback if csv behavior varies
-             parts = output.split()
-             if len(parts) >= 2: # unlikely with p=0 but possible
-                 w, h = parts[0], parts[1]
-             else:
-                 # Maybe newlines?
-                 # Let's try json which is safer
-                 raise ValueError("CSV parse failed")
-                 
-        return int(w), int(h)
-    except Exception:
-        # Retry with JSON format which is more robust
-        cmd = [
-            "ffprobe", "-v", "error", 
-            "-select_streams", "v:0",
-            "-show_entries", "stream=width,height", 
+            "-show_entries", "stream=width,height,avg_frame_rate:stream_tags=rotate:stream_side_data_list=rotation", 
             "-of", "json", 
             str(fpath)
         ]
         result = subprocess.run(cmd, capture_output=True, text=True, check=True)
         data = json.loads(result.stdout)
-        width = data["streams"][0]["width"]
-        height = data["streams"][0]["height"]
-        return int(width), int(height)
+        
+        stream = data["streams"][0]
+        width = int(stream.get("width", 0))
+        height = int(stream.get("height", 0))
+        
+        # Check rotation
+        rotation = 0
+        
+        # Check tags
+        tags = stream.get("tags", {})
+        if "rotate" in tags:
+            try:
+                rotation = int(tags["rotate"])
+            except:
+                pass
+                
+        # Check side data (sometimes rotation is here)
+        if rotation == 0 and "side_data_list" in stream:
+            for sd in stream["side_data_list"]:
+                if "rotation" in sd:
+                    try:
+                         rotation = int(sd["rotation"])
+                    except:
+                        pass
+        
+        # Normalize rotation
+        rotation = rotation % 360
+        
+        # Swap if 90 or 270 (vertical)
+        if rotation == 90 or rotation == 270:
+            return height, width
+            
+        return width, height
+        
+    except Exception as e:
+        print(f"Error getting video dimensions: {e}")
+        return 1080, 1920 # Fallback default
 
 def color_to_ass(hex_color: str) -> str:
     """
