@@ -441,17 +441,12 @@ def add_subtitles(
     """
     
     # FFmpeg subtitles filter requires escaping of Windows paths
-    # e.g. C:\path\to\file.srt -> C\:\\path\\to\\file.srt
-    # But usually just converting \ to / works fine in ffmpeg if we can.
-    # However, 'subtitles' filter is tricky with paths.
-    
-    # Best practice for Windows paths in filter string:
-    # 1. Use relative path if possible (cwd) -> safest but complex to manage CWD.
-    # 2. Escape colons and backslashes.
+    # When using single quotes '...', we generally don't need to escape the colon.
+    # We just need to ensure backslashes are forward slashes.
     
     path_str = str(srt_input).replace("\\", "/")
-    # Escape colon (e.g. C:/ -> C\:/)
-    path_str = path_str.replace(":", "\\:")
+    # Note: When wrapping in single quotes, we do NOT escape the colon.
+    # path_str = path_str.replace(":", "\\:")
     
     primary_colour = color_to_ass(font_color)
     outline_colour_ass = color_to_ass(outline_color)
@@ -475,6 +470,7 @@ def add_subtitles(
     )
     
     # 'subtitles=filename:force_style=...'
+    # We wrap filename and force_style in single quotes to protect them.
     vf_arg = f"subtitles='{path_str}':force_style='{force_style}'"
     
     cmd = [
