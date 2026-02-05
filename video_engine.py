@@ -440,29 +440,17 @@ def add_subtitles(
     font_size: Font size in pixels (default 24)
     """
     
-    # FFmpeg subtitles filter requires escaping of Windows paths
-    # When using single quotes '...', we generally don't need to escape the colon.
-    # We just need to ensure backslashes are forward slashes.
+    # FFmpeg subtitles filter on Windows has path issues (drive letters).
+    # The most robust fix is to run ffmpeg from the directory of the SRT file
+    # and use a relative filename.
     
-    path_str = str(srt_input).replace("\\", "/")
-    # Note: When wrapping in single quotes, we do NOT escape the colon.
-    # path_str = path_str.replace(":", "\\:")
+    # We will run subprocess with cwd = srt_input.parent
+    srt_filename = srt_input.name
     
     primary_colour = color_to_ass(font_color)
     outline_colour_ass = color_to_ass(outline_color)
     
     # force_style allows us to set Alignment, Font, Size etc.
-    # Alignment=2 is Bottom Center used by default in many players.
-    # Alignment=6 is Top Center? No, ASS Key:
-    # 7 8 9
-    # 4 5 6
-    # 1 2 3
-    
-    # So:
-    # Top-Left: 7, Top-Center: 8, Top-Right: 9
-    # Center-Left: 4, Center: 5, Center-Right: 6
-    # Bottom-Left: 1, Bottom-Center: 2, Bottom-Right: 3
-    
     force_style = (
         f"Alignment={alignment},MarginV={margin_vertical},Fontsize={font_size},"
         f"PrimaryColour={primary_colour},OutlineColour={outline_colour_ass},"
@@ -470,8 +458,8 @@ def add_subtitles(
     )
     
     # 'subtitles=filename:force_style=...'
-    # We wrap filename and force_style in single quotes to protect them.
-    vf_arg = f"subtitles='{path_str}':force_style='{force_style}'"
+    # Use relative filename now.
+    vf_arg = f"subtitles='{srt_filename}':force_style='{force_style}'"
     
     cmd = [
         "ffmpeg", "-y",
@@ -481,9 +469,12 @@ def add_subtitles(
         str(output_file)
     ]
     
-    print("Running ffmpeg (subtitles):", " ".join(cmd))
+    # Use the directory of the SRT as the working directory
+    cwd = srt_input.parent
+    
+    print(f"Running ffmpeg (subtitles) in {cwd}:", " ".join(cmd))
     try:
-        subprocess.run(cmd, check=True, capture_output=True, text=True)
+        subprocess.run(cmd, check=True, capture_output=True, text=True, cwd=cwd)
     except subprocess.CalledProcessError as e:
         # Standard error usually contains the ffmpeg log
         raise RuntimeError(f"FFmpeg subtitles failed.\nStderr: {e.stderr}") from e
