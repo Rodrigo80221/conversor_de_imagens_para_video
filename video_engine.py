@@ -409,13 +409,17 @@ def get_video_dimensions(fpath: Path) -> Tuple[int, int]:
         cmd = [
             "ffprobe", "-v", "error", 
             "-select_streams", "v:0",
-            "-show_entries", "stream=width,height,avg_frame_rate:stream_tags=rotate:stream_side_data_list=rotation", 
+            "-show_streams", 
             "-of", "json", 
             str(fpath)
         ]
         result = subprocess.run(cmd, capture_output=True, text=True, check=True)
         data = json.loads(result.stdout)
         
+        if not data.get("streams"):
+             # Raise error to trigger fallback
+             raise ValueError("No video streams found")
+             
         stream = data["streams"][0]
         width = int(stream.get("width", 0))
         height = int(stream.get("height", 0))
@@ -450,7 +454,7 @@ def get_video_dimensions(fpath: Path) -> Tuple[int, int]:
         return width, height
         
     except Exception as e:
-        print(f"Error getting video dimensions: {e}")
+        print(f"Error getting video dimensions: {e}. Fallback to 1080x1920.")
         return 1080, 1920 # Fallback default
 
 def color_to_ass(hex_color: str) -> str:
