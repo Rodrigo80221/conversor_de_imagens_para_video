@@ -404,75 +404,42 @@ def merge_video_audio(
     except subprocess.CalledProcessError as e:
         raise RuntimeError(f"FFmpeg merge failed.\nStderr: {e.stderr}") from e
 
-def get_video_dimensions(fpath: Path) -> Tuple[int, int]:
+import subprocess
+import json
+import re
+
+def get_video_dimensions(video_path: Path):
+    """
+    Uses ffprobe to get the real video dimensions.
+    """
+    cmd = [
+        "ffprobe", 
+        "-v", "error", 
+        "-select_streams", "v:0", 
+        "-show_entries", "stream=width,height", 
+        "-of", "json", 
+        str(video_path)
+    ]
     try:
-        cmd = [
-            "ffprobe", "-v", "error", 
-            "-select_streams", "v:0",
-            "-show_streams", 
-            "-of", "json", 
-            str(fpath)
-        ]
         result = subprocess.run(cmd, capture_output=True, text=True, check=True)
         data = json.loads(result.stdout)
-        
-        if not data.get("streams"):
-             # Raise error to trigger fallback
-             raise ValueError("No video streams found")
-             
-        stream = data["streams"][0]
-        width = int(stream.get("width", 0))
-        height = int(stream.get("height", 0))
-        
-        # Check rotation
-        rotation = 0
-        
-        # Check tags
-        tags = stream.get("tags", {})
-        if "rotate" in tags:
-            try:
-                rotation = int(tags["rotate"])
-            except:
-                pass
-                
-        # Check side data (sometimes rotation is here)
-        if rotation == 0 and "side_data_list" in stream:
-            for sd in stream["side_data_list"]:
-                if "rotation" in sd:
-                    try:
-                         rotation = int(sd["rotation"])
-                    except:
-                        pass
-        
-        # Normalize rotation
-        rotation = rotation % 360
-        
-        # Swap if 90 or 270 (vertical)
-        if rotation == 90 or rotation == 270:
-            return height, width
-            
+        width = int(data["streams"][0]["width"])
+        height = int(data["streams"][0]["height"])
         return width, height
-        
     except Exception as e:
-        print(f"Error getting video dimensions: {e}. Fallback to 1080x1920.")
-        return 1080, 1920 # Fallback default
+        print(f"Error probing video: {e}")
+        # Last resort fallback, but try to be conservative
+        return 1920, 1080 
 
 def color_to_ass(hex_color: str) -> str:
     """
-    Converts hex color (#RRGGBB) to ASS format (&H00BBGGRR).
-    Assumes opaque alpha (00).
+    Converts HEX #RRGGBB to ASS &HBBGGRR format.
     """
-    hex_color = hex_color.lstrip('#')
+    hex_color = hex_color.lstrip("#")
     if len(hex_color) != 6:
-        # Fallback default if invalid
-        return "&H00FFFFFF" 
-    
-    r = hex_color[0:2]
-    g = hex_color[2:4]
-    b = hex_color[4:6]
-    
-    # ASS format: &H00BBGGRR (BGR order)
-    return f"&H00{b}{g}{r}"
+        return "&HFFFFFF" # Default white
+    r, g, b = hex_color[:2], hex_color[2:4], hex_color[4:]
+    return f"&H{b}{g}{r}"
 
 def add_subtitles(
     video_input: Path,
@@ -483,78 +450,76 @@ def add_subtitles(
     outline_color: str = "#000000",
     font_size: int = 24
 ):
-    """
-    Burn subtitles into video using ffmpeg.
-    vertical_pos: Distance from center in pixels. 
-                  Positive = Above Center (Moves Up).
-                  Negative = Below Center (Moves Down).
-                  0 = Exact Center.
-    """
     
-    # FFmpeg subtitles filter on Windows has path issues (drive letters).
-    # The most robust fix is to run ffmpeg from the directory of the SRT file
-    # and use a relative filename.
-    
-    # We will run subprocess with cwd = srt_input.parent
     srt_filename = srt_input.name
     
-    # Get Video Height to calculate margin
+    # 1. Get Real Dimensions
     try:
         width, height = get_video_dimensions(video_input)
-    except Exception as e:
-        print(f"Warning: Could not determine video dimensions ({e}). Defaulting to standard margins.")
-        height = 1920 # Fallback
-        
-    # Logic:
-    # We use Alignment=2 (Bottom Center).
-    # At alignments 1,2,3, MarginV is distance from Bottom.
-    # Center Y = height / 2.
-    # User wants: Position Y (from center) = vertical_pos. 
-    # (assuming standard coordinate system where +Y is UP from center? User said "Positive ABOVE middle")
-    #
-    # If using Bottom Reference (y=0 is bottom):
-    # Center y = H/2.
-    # Target y = H/2 + vertical_pos.
-    # MarginV (distance from bottom) = Target y = H/2 + vertical_pos.
+        print(f"DEBUG: Detected Video Dimensions: {width}x{height}")
+    except Exception:
+        print("Warning: Could not determine dimensions. Using 1080p fallback.")
+        height = 1080 # Safer fallback than 1920 for landscape videos
+
+    # 2. Smart Alignment Logic
+    # It is much safer to change the Alignment anchor based on position 
+    # rather than using huge margins from the bottom.
     
-    margin_v = int((height / 2) + vertical_pos)
-    
-    # Clamp just in case? explicit margin can be negative in ASS but let's keep it safe?
-    # Actually ASS allows negative margins to push off screen, but usually we want visible.
-    
-    alignment = 2 # Bottom Center
-    
+    # Convert HEX to ASS color (&HBBGGRR)
     primary_colour = color_to_ass(font_color)
     outline_colour_ass = color_to_ass(outline_color)
-    
-    # force_style allows us to set Alignment, Font, Size etc.
+
+    if vertical_pos == 0:
+        # EXACT CENTER
+        alignment = 10 # Middle Center
+        margin_v = 0   # No offset needed
+    elif vertical_pos < 0:
+        # BELOW CENTER (Towards Bottom)
+        alignment = 2  # Bottom Center
+        # Calculate distance from bottom
+        # If vertical_pos is -900, we want it near bottom.
+        # Center is Height/2. 
+        # Target from bottom = (Height/2) - abs(vertical_pos)
+        
+        calculated_margin = (height / 2) - abs(vertical_pos)
+        margin_v = int(max(10, calculated_margin)) # Clamp to at least 10px from bottom
+    else:
+        # ABOVE CENTER (Towards Top)
+        alignment = 6 # Top Center
+        # Calculate distance from Top
+        calculated_margin = (height / 2) - abs(vertical_pos)
+        margin_v = int(max(10, calculated_margin))
+
+    print(f"DEBUG: Align={alignment}, MarginV={margin_v}, Height={height}")
+
+    # 3. Construct Style
     force_style = (
         f"Alignment={alignment},MarginV={margin_v},Fontsize={font_size},"
         f"PrimaryColour={primary_colour},OutlineColour={outline_colour_ass},"
         "BorderStyle=1,Outline=1,Shadow=0"
     )
     
-    # 'subtitles=filename:force_style=...'
-    # Use relative filename now.
+    # 4. Escape filename for FFmpeg (handling special chars/spaces)
+    # Using relative path within the cwd context is safest
     vf_arg = f"subtitles='{srt_filename}':force_style='{force_style}'"
     
     cmd = [
         "ffmpeg", "-y",
         "-i", str(video_input),
         "-vf", vf_arg,
-        "-c:a", "copy", # Copy audio without re-encoding
+        "-c:a", "copy",
+        "-c:v", "libx264", # Ensure we encode to widely compatible format
+        "-preset", "fast",
         str(output_file)
     ]
     
-    # Use the directory of the SRT as the working directory
     cwd = srt_input.parent
+    print(f"Running ffmpeg in {cwd}...")
     
-    print(f"Running ffmpeg (subtitles) in {cwd}:", " ".join(cmd))
     try:
-        subprocess.run(cmd, check=True, capture_output=True, text=True, cwd=cwd)
+        subprocess.run(cmd, check=True, cwd=cwd)
     except subprocess.CalledProcessError as e:
-        # Standard error usually contains the ffmpeg log
-        raise RuntimeError(f"FFmpeg subtitles failed.\nStderr: {e.stderr}") from e
+        raise RuntimeError(f"FFmpeg failed") from e
 
 
 def generate_subtitles(
