@@ -13,6 +13,7 @@ from pathlib import Path
 import zipfile
 import video_engine
 import music_engine
+from starlette.concurrency import run_in_threadpool
 
 app = FastAPI()
 
@@ -264,7 +265,8 @@ async def auto_subtitles_endpoint(
             
         # Generate subtitles using Whisper
         try:
-            srt_content = video_engine.generate_subtitles(
+            srt_content = await run_in_threadpool(
+                video_engine.generate_subtitles,
                 audio_path=Path(input_path),
                 output_srt_path=None, # Don't need file output
                 words_per_line=words_per_line
