@@ -497,12 +497,14 @@ def generate_subtitles(
     audio_path: Path,
     output_srt_path: Optional[Path] = None,
     words_per_line: int = 5,
-    model_size: str = "medium"
+    model_size: str = "medium",
+    language: Optional[str] = None
 ) -> str:
     """
     Generates an SRT string from an audio file using OpenAI Whisper.
     Groups words based on words_per_line constraint.
     If output_srt_path is provided, also saves to file.
+    If language is None, Whisper will auto-detect.
     """
     
     warnings.filterwarnings("ignore")
@@ -510,9 +512,9 @@ def generate_subtitles(
     print(f"Loading Whisper model ({model_size})...")
     model = whisper.load_model(model_size)
     
-    print("Transcribing audio...")
+    print(f"Transcribing audio (Language: {language or 'Auto-detect'})...")
     # Using word_timestamps=True to get word-level precision
-    result = model.transcribe(str(audio_path), language="pt", word_timestamps=True)
+    result = model.transcribe(str(audio_path), language=language, word_timestamps=True)
     
     def fmt(t):
         h = int(t // 3600)

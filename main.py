@@ -202,7 +202,8 @@ async def add_subtitles_endpoint(
     position_y: int = Form(0), # 0 = Base Absoluta, Valor Positivo = Sobe em direção ao topo
     font_color: str = Form("#FFFFFF"),
     outline_color: str = Form("#000000"),
-    font_size: int = Form(24)
+    font_size: int = Form(24),
+    output_name: str = Form("video_subbed")
 ):
     temp_dir = tempfile.mkdtemp()
     try:
@@ -218,7 +219,11 @@ async def add_subtitles_endpoint(
         with open(srt_path, "w", encoding="utf-8") as f:
             f.write(subtitle_content)
             
-        output_filename = "video_with_subs.mp4"
+        # Ensure output name ends with .mp4
+        if not output_name.lower().endswith(".mp4"):
+            output_name += ".mp4"
+            
+        output_filename = "video_with_subs.mp4" # Internal name
         output_path = os.path.join(temp_dir, output_filename)
         
         # --- A CORREÇÃO ESTÁ AQUI ---
@@ -241,7 +246,7 @@ async def add_subtitles_endpoint(
         return FileResponse(
             output_path, 
             media_type="video/mp4", 
-            filename="video_subbed.mp4"
+            filename=output_name
         )
 
     except Exception as e:
