@@ -4,11 +4,11 @@ from pathlib import Path
 from typing import Dict, List, Tuple, Optional
 import wave
 import contextlib
-import os
 import whisper
 import warnings
 import math
-
+import json
+import re
 
 COMMON_EXTS = [".png", ".jpg", ".jpeg", ".webp"]
 
@@ -404,10 +404,6 @@ def merge_video_audio(
     except subprocess.CalledProcessError as e:
         raise RuntimeError(f"FFmpeg merge failed.\nStderr: {e.stderr}") from e
 
-import subprocess
-import json
-import re
-
 def get_video_dimensions(video_path: Path):
     """
     Uses ffprobe to get the real video dimensions.
@@ -433,11 +429,14 @@ def get_video_dimensions(video_path: Path):
 
 def color_to_ass(hex_color: str) -> str:
     """
-    Converts HEX #RRGGBB to ASS &HBBGGRR format.
+    Converte HEX padrão (#RRGGBB) para o formato ASS (&HBBGGRR).
+    Sem isso, as cores personalizadas não funcionam no FFmpeg.
     """
     hex_color = hex_color.lstrip("#")
     if len(hex_color) != 6:
-        return "&HFFFFFF" # Default white
+        return "&HFFFFFF" # Branco padrão se der erro
+    
+    # ASS usa BGR ao invés de RGB
     r, g, b = hex_color[:2], hex_color[2:4], hex_color[4:]
     return f"&H{b}{g}{r}"
 
@@ -445,81 +444,53 @@ def add_subtitles(
     video_input: Path,
     srt_input: Path,
     output_file: Path,
-    vertical_pos: int = 0, # 0 = Center, + = Up, - = Down
+    position_y: int = 0, # 0 = Base absoluta, + = Sobe em direção ao topo
     font_color: str = "#FFFFFF",
     outline_color: str = "#000000",
     font_size: int = 24
 ):
     
-    srt_filename = srt_input.name
-    
-    # 1. Get Real Dimensions
-    try:
-        width, height = get_video_dimensions(video_input)
-        print(f"DEBUG: Detected Video Dimensions: {width}x{height}")
-    except Exception:
-        print("Warning: Could not determine dimensions. Using 1080p fallback.")
-        height = 1080 # Safer fallback than 1920 for landscape videos
-
-    # 2. Smart Alignment Logic
-    # It is much safer to change the Alignment anchor based on position 
-    # rather than using huge margins from the bottom.
-    
-    # Convert HEX to ASS color (&HBBGGRR)
+    # Prepara cores
     primary_colour = color_to_ass(font_color)
     outline_colour_ass = color_to_ass(outline_color)
+    
+    # Lógica Simplificada:
+    # Alignment=2 (Base Central).
+    # MarginV define quantos pixels subir a partir da base.
+    alignment = 2 
+    margin_v = position_y 
 
-    if vertical_pos == 0:
-        # EXACT CENTER
-        alignment = 10 # Middle Center
-        margin_v = 0   # No offset needed
-    elif vertical_pos < 0:
-        # BELOW CENTER (Towards Bottom)
-        alignment = 2  # Bottom Center
-        # Calculate distance from bottom
-        # If vertical_pos is -900, we want it near bottom.
-        # Center is Height/2. 
-        # Target from bottom = (Height/2) - abs(vertical_pos)
-        
-        calculated_margin = (height / 2) - abs(vertical_pos)
-        margin_v = int(max(10, calculated_margin)) # Clamp to at least 10px from bottom
-    else:
-        # ABOVE CENTER (Towards Top)
-        alignment = 6 # Top Center
-        # Calculate distance from Top
-        calculated_margin = (height / 2) - abs(vertical_pos)
-        margin_v = int(max(10, calculated_margin))
-
-    print(f"DEBUG: Align={alignment}, MarginV={margin_v}, Height={height}")
-
-    # 3. Construct Style
+    # Constrói o estilo forçado
+    # BorderStyle=1 (Outline + DropShadow básico)
     force_style = (
         f"Alignment={alignment},MarginV={margin_v},Fontsize={font_size},"
         f"PrimaryColour={primary_colour},OutlineColour={outline_colour_ass},"
         "BorderStyle=1,Outline=1,Shadow=0"
     )
     
-    # 4. Escape filename for FFmpeg (handling special chars/spaces)
-    # Using relative path within the cwd context is safest
+    print(f"DEBUG: Aplicando legendas com MarginV={margin_v} (Distância do fundo)")
+
+    # Escapar nome do arquivo para o filtro
+    srt_filename = srt_input.name
     vf_arg = f"subtitles='{srt_filename}':force_style='{force_style}'"
-    
+
     cmd = [
         "ffmpeg", "-y",
         "-i", str(video_input),
         "-vf", vf_arg,
-        "-c:a", "copy",
-        "-c:v", "libx264", # Ensure we encode to widely compatible format
-        "-preset", "fast",
+        "-c:a", "copy",       # Copia áudio (rápido)
+        "-c:v", "libx264",    # Re-codifica vídeo (necessário para queimar legenda)
+        "-preset", "fast",    # Velocidade de encode
         str(output_file)
     ]
-    
+
+    # Executa a partir da pasta do SRT para evitar erros de caminho no Windows
     cwd = srt_input.parent
-    print(f"Running ffmpeg in {cwd}...")
     
     try:
         subprocess.run(cmd, check=True, cwd=cwd)
     except subprocess.CalledProcessError as e:
-        raise RuntimeError(f"FFmpeg failed") from e
+        raise RuntimeError(f"Erro no FFmpeg ao adicionar legendas") from e
 
 
 def generate_subtitles(
