@@ -198,7 +198,7 @@ async def add_subtitles_endpoint(
     background_tasks: BackgroundTasks,
     video_file: UploadFile = File(...),
     subtitle_content: str = Form(...),
-    position_y: int = Form(0), # 0 = Center, + = Up, - = Down
+    position_y: int = Form(0), # 0 = Base Absoluta, Valor Positivo = Sobe em direção ao topo
     font_color: str = Form("#FFFFFF"),
     outline_color: str = Form("#000000"),
     font_size: int = Form(24)
@@ -220,15 +220,17 @@ async def add_subtitles_endpoint(
         output_filename = "video_with_subs.mp4"
         output_path = os.path.join(temp_dir, output_filename)
         
+        # --- A CORREÇÃO ESTÁ AQUI ---
         video_engine.add_subtitles(
             video_input=Path(video_path),
             srt_input=Path(srt_path),
             output_file=Path(output_path),
-            vertical_pos=position_y,
+            position_y=position_y,      # <--- Corrigido de vertical_pos para position_y
             font_color=font_color,
             outline_color=outline_color,
             font_size=font_size
         )
+        # ----------------------------
         
         if not os.path.exists(output_path):
              shutil.rmtree(temp_dir)
