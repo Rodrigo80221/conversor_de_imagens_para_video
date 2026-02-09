@@ -3,6 +3,7 @@ from typing import Optional
 from enum import Enum
 from fastapi.responses import FileResponse
 import uvicorn
+import requests
 import io
 import wave
 import json
@@ -286,6 +287,47 @@ async def auto_subtitles_endpoint(
 
     except Exception as e:
         shutil.rmtree(temp_dir)
+        return {"error": str(e)}
+
+
+@app.post("/upload-to-baserow")
+async def upload_to_baserow(
+    token: str = Form(...),
+    file: UploadFile = File(...)
+):
+    try:
+        # Save file to temp
+        temp_dir = tempfile.mkdtemp()
+        file_path = os.path.join(temp_dir, file.filename)
+        with open(file_path, "wb") as f:
+            f.write(await file.read())
+            
+        # Baserow upload logic
+        url_upload = "https://api.baserow.io/api/user-files/upload-file/"
+        headers = {
+            "Authorization": f"Token {token}" if not token.startswith("Token ") else token
+        }
+        
+        with open(file_path, "rb") as arquivo:
+            files = {
+                "file": (file.filename, arquivo, file.content_type)
+            }
+            response = requests.post(url_upload, headers=headers, files=files)
+            
+        # Cleanup
+        shutil.rmtree(temp_dir)
+        
+        if response.status_code == 200:
+            return response.json()
+        else:
+            return {
+                "error": f"Baserow upload failed: {response.status_code}",
+                "details": response.text
+            }
+
+    except Exception as e:
+        if 'temp_dir' in locals() and os.path.exists(temp_dir):
+            shutil.rmtree(temp_dir)
         return {"error": str(e)}
 
 if __name__ == "__main__":
