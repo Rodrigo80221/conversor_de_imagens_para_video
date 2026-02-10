@@ -299,100 +299,165 @@ async def create_images_endpoint(
     files: List[UploadFile] = File(None)
 ):
     temp_dir = tempfile.mkdtemp()
+    
+    def upload_to_gemini(content_bytes, mime_type, display_name):
+        # 1. Initiate Resumable Upload
+        init_url = f"https://generativelanguage.googleapis.com/upload/v1beta/files?key={token}"
+        headers = {
+            "X-Goog-Upload-Protocol": "resumable",
+            "X-Goog-Upload-Command": "start",
+            "X-Goog-Upload-Header-Content-Length": str(len(content_bytes)),
+            "X-Goog-Upload-Header-Content-Type": "application/json",
+            "Content-Type": "application/json"
+        }
+        # Note: Initial header content type for metadata is application/json.
+        # X-Goog-Upload-Header-Content-Type is the MIME of the actual file (e.g. image/jpeg).
+        init_headers = {
+            "X-Goog-Upload-Protocol": "resumable",
+            "X-Goog-Upload-Command": "start",
+            "X-Goog-Upload-Header-Content-Length": str(len(content_bytes)),
+            "X-Goog-Upload-Header-Content-Type": mime_type,
+            "Content-Type": "application/json"
+        }
+        meta_body = {"file": {"display_name": display_name}}
+        
+        init_resp = requests.post(init_url, headers=init_headers, json=meta_body)
+        if init_resp.status_code != 200:
+            raise RuntimeError(f"Failed to init upload: {init_resp.text}")
+        
+        upload_url = init_resp.headers.get("X-Goog-Upload-URL")
+        
+        # 2. Upload Bytes
+        upload_headers = {
+            "Content-Length": str(len(content_bytes)),
+            "X-Goog-Upload-Offset": "0",
+            "X-Goog-Upload-Command": "upload, finalize"
+        }
+        
+        upload_resp = requests.post(upload_url, headers=upload_headers, data=content_bytes)
+        if upload_resp.status_code != 200:
+            raise RuntimeError(f"Failed to upload bytes: {upload_resp.text}")
+        
+        return upload_resp.json().get("file", {}).get("uri")
+
     try:
         req_data = json.loads(payload)
-        # Default model if not specified, but check payload first
-        model_name = req_data.pop("model", "gemini-2.5-flash-image")
-        
-        # Handle Reference, upload check
-        if files and req_data.get("actor_ref"):
-            uploaded_uris = []
-            for file in files:
-                file_content = await file.read()
-                file_size = len(file_content)
-                mime_type = file.content_type or "image/jpeg"
-                
-                # 1. Initiate Resumable Upload
-                init_url = f"https://generativelanguage.googleapis.com/upload/v1beta/files?key={token}"
-                headers = {
-                    "X-Goog-Upload-Protocol": "resumable",
-                    "X-Goog-Upload-Command": "start",
-                    "X-Goog-Upload-Header-Content-Length": str(file_size),
-                    "X-Goog-Upload-Header-Content-Type": mime_type,
-                    "Content-Type": "application/json"
-                }
-                meta_body = {"file": {"display_name": file.filename}}
-                
-                init_resp = requests.post(init_url, headers=headers, json=meta_body)
-                if init_resp.status_code != 200:
-                    raise RuntimeError(f"Failed to init upload: {init_resp.text}")
-                
-                upload_url = init_resp.headers.get("X-Goog-Upload-URL")
-                
-                # 2. Upload Bytes
-                upload_headers = {
-                    "Content-Length": str(file_size),
-                    "X-Goog-Upload-Offset": "0",
-                    "X-Goog-Upload-Command": "upload, finalize"
-                }
-                
-                upload_resp = requests.post(upload_url, headers=upload_headers, data=file_content)
-                if upload_resp.status_code != 200:
-                    raise RuntimeError(f"Failed to upload bytes: {upload_resp.text}")
-                
-                upload_data = upload_resp.json()
-                file_uri = upload_data.get("file", {}).get("uri")
-                uploaded_uris.append((file_uri, mime_type))
-            
-            # Inject into payload contents
-            # Ensure basic structure exists
-            if "contents" not in req_data:
-                req_data["contents"] = [{"parts": []}]
-            
-            # Append to first content parts (standard prompt typical location)
-            for uri, mime in uploaded_uris:
-                req_data["contents"][0]["parts"].append({
-                    "file_data": {"mime_type": mime, "file_uri": uri}
-                })
-
-        # Call Gemini API
-        url = f"https://generativelanguage.googleapis.com/v1beta/models/{model_name}:generateContent?key={token}"
-        response = requests.post(url, json=req_data)
-        
-        if response.status_code != 200:
-             # Try to return useful error
-             error_info = response.text
-             try:
-                 error_json = response.json()
-                 error_info = error_json.get("error", {}).get("message", error_info)
-             except:
-                 pass
-             raise RuntimeError(f"Gemini API ({model_name}) Error: {error_info}")
-             
-        resp_json = response.json()
-        
-        # Extract Images (Base64)
         images_data = []
-        candidates = resp_json.get("candidates", [])
-        for i, cand in enumerate(candidates):
-            parts = cand.get("content", {}).get("parts", [])
-            for j, part in enumerate(parts):
-                if "inline_data" in part:
-                    b64_data = part["inline_data"]["data"]
-                    mime = part["inline_data"].get("mime_type", "image/png")
-                    ext = mime.split("/")[-1]
-                    img_bytes = base64.b64decode(b64_data)
-                    images_data.append((f"gen_image_{i}_{j}.{ext}", img_bytes))
         
-        if not images_data:
-            # Maybe the model returns a different format or just text?
-            # Creating a text log if no images found
-            log_path = os.path.join(temp_dir, "response.json")
-            with open(log_path, "w") as f:
-                json.dump(resp_json, f, indent=2)
+        # Determine if this is the "Visual Strategy" video plan schema
+        is_video_plan = "structure" in req_data and "scenes" in req_data["structure"]
+        
+        tasks = []
+        
+        if is_video_plan:
+            # Plan Schema
+            scenes = req_data["structure"]["scenes"]
+            for scene in scenes:
+                model_name = scene.get("generation_technology", "gemini-2.5-flash-image")
+                prompt = scene.get("scene_image_description", "")
+                scene_num = scene.get("scene_number", "0")
+                
+                # Build content parts
+                parts = [{"text": prompt}]
+                
+                # Reference Image URL
+                if scene.get("actor_ref") and scene.get("actor_url"):
+                    try:
+                        actor_url = scene["actor_url"]
+                        dl_resp = requests.get(actor_url)
+                        if dl_resp.status_code == 200:
+                            mime = dl_resp.headers.get("Content-Type", "image/jpeg")
+                            # Sanitize display name
+                            disp_name = f"ref_scene_{scene_num}_{len(parts)}"
+                            file_uri = upload_to_gemini(dl_resp.content, mime, disp_name)
+                            parts.append({"file_data": {"mime_type": mime, "file_uri": file_uri}})
+                    except Exception as e:
+                        print(f"Warning: Failed to load actor ref for scene {scene_num}: {e}")
+                
+                # Construct Gemini Request
+                gemini_req = {
+                    "contents": [{"parts": parts}]
+                }
+                tasks.append({
+                    "model": model_name,
+                    "body": gemini_req,
+                    "filename": f"scene_{scene_num}.png"
+                })
+        else:
+            # Legacy / Direct Schema
+            model_name = req_data.pop("model", "gemini-2.5-flash-image")
             
-            # If strictly image gen, this is a failure, but let's return the log in zip
-            images_data.append(("debug_response.json", json.dumps(resp_json, indent=2).encode()))
+            # Helper to inject uploaded files if any
+            if files: 
+                 # Ensure structure
+                if "contents" not in req_data:
+                    req_data["contents"] = [{"parts": []}]
+                
+                uploaded_files_uris = []
+                for file in files:
+                    content = await file.read()
+                    mime = file.content_type or "image/jpeg"
+                    uri = upload_to_gemini(content, mime, file.filename)
+                    uploaded_files_uris.append((uri, mime))
+            
+                # Inject into first content block
+                if uploaded_files_uris:
+                    if not req_data["contents"]:
+                         req_data["contents"].append({"parts": []})
+                    parts_list = req_data["contents"][0].get("parts", [])
+                    if not isinstance(parts_list, list):
+                        parts_list = []
+                        req_data["contents"][0]["parts"] = parts_list
+                         
+                    for uri, mime in uploaded_files_uris:
+                        parts_list.append({
+                            "file_data": {"mime_type": mime, "file_uri": uri}
+                        })
+
+            tasks.append({
+                "model": model_name,
+                "body": req_data,
+                "filename": "generated.png" # Standard name
+            })
+
+        # Execute Requests
+        for task in tasks:
+            url = f"https://generativelanguage.googleapis.com/v1beta/models/{task['model']}:generateContent?key={token}"
+            response = requests.post(url, json=task['body'])
+            
+            resp_json = response.json() if response.status_code == 200 else {}
+            
+            # Handle Error (Store as text file)
+            if response.status_code != 200:
+                err_text = response.text
+                try: 
+                    err_json = response.json()
+                    err_text = err_json.get("error", {}).get("message", err_text)
+                except: pass
+                images_data.append((f"{task['filename']}_error.txt", err_text.encode('utf-8')))
+                continue
+
+            # Extract Candidates (Images)
+            candidates = resp_json.get("candidates", [])
+            found_image = False
+            for i, cand in enumerate(candidates):
+                parts = cand.get("content", {}).get("parts", [])
+                for j, part in enumerate(parts):
+                    if "inline_data" in part:
+                        b64_data = part["inline_data"]["data"]
+                        mime = part["inline_data"].get("mime_type", "image/png")
+                        ext = mime.split("/")[-1] if "/" in mime else "png"
+                        img_bytes = base64.b64decode(b64_data)
+                        
+                        base_fname = os.path.splitext(task['filename'])[0]
+                        final_fname = f"{base_fname}_{i}_{j}.{ext}" if (len(candidates) > 1 or len(parts) > 1) else f"{base_fname}.{ext}"
+                        
+                        images_data.append((final_fname, img_bytes))
+                        found_image = True
+            
+            if not found_image:
+                 # Save full JSON response for debugging
+                 images_data.append((f"{task['filename']}_response.json", json.dumps(resp_json, indent=2).encode('utf-8')))
 
         # Zip Creation
         zip_path = os.path.join(temp_dir, "images.zip")
