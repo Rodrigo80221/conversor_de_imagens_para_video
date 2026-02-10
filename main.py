@@ -1,5 +1,5 @@
 from fastapi import FastAPI, UploadFile, File, Form, BackgroundTasks
-from typing import Optional
+from typing import Optional, List
 from enum import Enum
 from fastapi.responses import FileResponse
 import uvicorn
@@ -15,6 +15,7 @@ import zipfile
 import video_engine
 import music_engine
 from starlette.concurrency import run_in_threadpool
+import base64
 
 app = FastAPI()
 
@@ -289,6 +290,122 @@ async def auto_subtitles_endpoint(
         shutil.rmtree(temp_dir)
         return {"error": str(e)}
 
+
+@app.post("/create-images")
+async def create_images_endpoint(
+    background_tasks: BackgroundTasks,
+    token: str = Form(...),
+    payload: str = Form(...),
+    files: List[UploadFile] = File(None)
+):
+    temp_dir = tempfile.mkdtemp()
+    try:
+        req_data = json.loads(payload)
+        # Default model if not specified, but check payload first
+        model_name = req_data.pop("model", "gemini-2.5-flash-image")
+        
+        # Handle Reference, upload check
+        if files and req_data.get("actor_ref"):
+            uploaded_uris = []
+            for file in files:
+                file_content = await file.read()
+                file_size = len(file_content)
+                mime_type = file.content_type or "image/jpeg"
+                
+                # 1. Initiate Resumable Upload
+                init_url = f"https://generativelanguage.googleapis.com/upload/v1beta/files?key={token}"
+                headers = {
+                    "X-Goog-Upload-Protocol": "resumable",
+                    "X-Goog-Upload-Command": "start",
+                    "X-Goog-Upload-Header-Content-Length": str(file_size),
+                    "X-Goog-Upload-Header-Content-Type": mime_type,
+                    "Content-Type": "application/json"
+                }
+                meta_body = {"file": {"display_name": file.filename}}
+                
+                init_resp = requests.post(init_url, headers=headers, json=meta_body)
+                if init_resp.status_code != 200:
+                    raise RuntimeError(f"Failed to init upload: {init_resp.text}")
+                
+                upload_url = init_resp.headers.get("X-Goog-Upload-URL")
+                
+                # 2. Upload Bytes
+                upload_headers = {
+                    "Content-Length": str(file_size),
+                    "X-Goog-Upload-Offset": "0",
+                    "X-Goog-Upload-Command": "upload, finalize"
+                }
+                
+                upload_resp = requests.post(upload_url, headers=upload_headers, data=file_content)
+                if upload_resp.status_code != 200:
+                    raise RuntimeError(f"Failed to upload bytes: {upload_resp.text}")
+                
+                upload_data = upload_resp.json()
+                file_uri = upload_data.get("file", {}).get("uri")
+                uploaded_uris.append((file_uri, mime_type))
+            
+            # Inject into payload contents
+            # Ensure basic structure exists
+            if "contents" not in req_data:
+                req_data["contents"] = [{"parts": []}]
+            
+            # Append to first content parts (standard prompt typical location)
+            for uri, mime in uploaded_uris:
+                req_data["contents"][0]["parts"].append({
+                    "file_data": {"mime_type": mime, "file_uri": uri}
+                })
+
+        # Call Gemini API
+        url = f"https://generativelanguage.googleapis.com/v1beta/models/{model_name}:generateContent?key={token}"
+        response = requests.post(url, json=req_data)
+        
+        if response.status_code != 200:
+             # Try to return useful error
+             error_info = response.text
+             try:
+                 error_json = response.json()
+                 error_info = error_json.get("error", {}).get("message", error_info)
+             except:
+                 pass
+             raise RuntimeError(f"Gemini API ({model_name}) Error: {error_info}")
+             
+        resp_json = response.json()
+        
+        # Extract Images (Base64)
+        images_data = []
+        candidates = resp_json.get("candidates", [])
+        for i, cand in enumerate(candidates):
+            parts = cand.get("content", {}).get("parts", [])
+            for j, part in enumerate(parts):
+                if "inline_data" in part:
+                    b64_data = part["inline_data"]["data"]
+                    mime = part["inline_data"].get("mime_type", "image/png")
+                    ext = mime.split("/")[-1]
+                    img_bytes = base64.b64decode(b64_data)
+                    images_data.append((f"gen_image_{i}_{j}.{ext}", img_bytes))
+        
+        if not images_data:
+            # Maybe the model returns a different format or just text?
+            # Creating a text log if no images found
+            log_path = os.path.join(temp_dir, "response.json")
+            with open(log_path, "w") as f:
+                json.dump(resp_json, f, indent=2)
+            
+            # If strictly image gen, this is a failure, but let's return the log in zip
+            images_data.append(("debug_response.json", json.dumps(resp_json, indent=2).encode()))
+
+        # Zip Creation
+        zip_path = os.path.join(temp_dir, "images.zip")
+        with zipfile.ZipFile(zip_path, 'w') as zf:
+            for fname, data in images_data:
+                zf.writestr(fname, data)
+                
+        background_tasks.add_task(cleanup_temp_dir, temp_dir)
+        return FileResponse(zip_path, media_type="application/zip", filename="generated_images.zip")
+
+    except Exception as e:
+        shutil.rmtree(temp_dir)
+        return {"error": str(e)}
 
 @app.post("/upload-to-baserow")
 async def upload_to_baserow(
