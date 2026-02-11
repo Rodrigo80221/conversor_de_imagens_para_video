@@ -357,6 +357,10 @@ async def create_images_endpoint(
                 prompt = scene.get("scene_image_description", "")
                 scene_num = scene.get("scene_number", "0")
                 
+                # Scene 1 is a thumbnail -> handled by other service
+                if str(scene_num) == "1":
+                    continue
+
                 # Build content parts
                 parts = [{"text": prompt}]
                 
@@ -443,9 +447,10 @@ async def create_images_endpoint(
             for i, cand in enumerate(candidates):
                 parts = cand.get("content", {}).get("parts", [])
                 for j, part in enumerate(parts):
-                    if "inline_data" in part:
-                        b64_data = part["inline_data"]["data"]
-                        mime = part["inline_data"].get("mime_type", "image/png")
+                    if "inline_data" in part or "inlineData" in part:
+                        inline_data = part.get("inline_data") or part.get("inlineData")
+                        b64_data = inline_data["data"]
+                        mime = inline_data.get("mime_type") or inline_data.get("mimeType") or "image/png"
                         ext = mime.split("/")[-1] if "/" in mime else "png"
                         img_bytes = base64.b64decode(b64_data)
                         
