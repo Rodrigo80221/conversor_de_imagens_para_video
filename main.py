@@ -425,6 +425,7 @@ async def create_images_endpoint(
             })
 
         # Execute Requests
+        image_count = 1
         for task in tasks:
             url = f"https://generativelanguage.googleapis.com/v1beta/models/{task['model']}:generateContent?key={token}"
             response = requests.post(url, json=task['body'])
@@ -454,8 +455,8 @@ async def create_images_endpoint(
                         ext = mime.split("/")[-1] if "/" in mime else "png"
                         img_bytes = base64.b64decode(b64_data)
                         
-                        base_fname = os.path.splitext(task['filename'])[0]
-                        final_fname = f"{base_fname}_{i}_{j}.{ext}" if (len(candidates) > 1 or len(parts) > 1) else f"{base_fname}.{ext}"
+                        final_fname = f"image_{image_count}.{ext}"
+                        image_count += 1
                         
                         images_data.append((final_fname, img_bytes))
                         found_image = True
