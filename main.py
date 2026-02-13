@@ -23,6 +23,47 @@ app = FastAPI()
 def read_root():
     return {"status": "Online", "message": "API de Video/Audio rodando no Easypanel!"}
 
+@app.post("/add-silence")
+async def add_silence_endpoint(
+    background_tasks: BackgroundTasks,
+    file: UploadFile = File(...),
+    duration_ms: int = Form(...)
+):
+    temp_dir = tempfile.mkdtemp()
+    try:
+        # Save audio file
+        # Preserve original extension or assume wav
+        original_ext = os.path.splitext(file.filename)[1] if file.filename else ".wav"
+        input_path = os.path.join(temp_dir, f"input_audio{original_ext}")
+        
+        with open(input_path, "wb") as f:
+            f.write(await file.read())
+            
+        output_filename = f"audio_silenced{original_ext}"
+        output_path = os.path.join(temp_dir, output_filename)
+        
+        await run_in_threadpool(
+            video_engine.add_silence_to_audio,
+            input_file=Path(input_path),
+            output_file=Path(output_path),
+            duration_ms=duration_ms
+        )
+        
+        if not os.path.exists(output_path):
+             shutil.rmtree(temp_dir)
+             return {"error": "Silence addition failed (no output file created)"}
+
+        background_tasks.add_task(cleanup_temp_dir, temp_dir)
+        return FileResponse(
+            output_path, 
+            media_type="audio/wav", 
+            filename=output_filename
+        )
+
+    except Exception as e:
+        shutil.rmtree(temp_dir)
+        return {"error": str(e)}
+
 @app.post("/get-duration")
 async def get_audio_duration(file: UploadFile = File(...)):
     # Lê o arquivo de áudio da memória

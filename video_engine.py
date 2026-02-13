@@ -564,3 +564,52 @@ def generate_subtitles(
         
     return srt_content
 
+def get_audio_channels(file_path: Path) -> int:
+    """
+    Uses ffprobe to get the number of audio channels.
+    """
+    cmd = [
+        "ffprobe", 
+        "-v", "error", 
+        "-select_streams", "a:0", 
+        "-show_entries", "stream=channels", 
+        "-of", "json", 
+        str(file_path)
+    ]
+    try:
+        result = subprocess.run(cmd, capture_output=True, text=True, check=True)
+        data = json.loads(result.stdout)
+        if "streams" in data and len(data["streams"]) > 0:
+            return int(data["streams"][0]["channels"])
+        return 2 # Default to stereo if unsure
+    except Exception as e:
+        print(f"Error probing audio channels: {e}")
+        return 2
+
+def add_silence_to_audio(input_file: Path, output_file: Path, duration_ms: int):
+    """
+    Adds silence at the beginning of the audio file using adelay filter.
+    """
+    # First, try to detect channels to be safe, although newer ffmpeg supports all=1
+    channels = get_audio_channels(input_file)
+    
+    # Construct adelay string: "1000|1000" for stereo
+    # adelay string format: "del1|del2|del3..."
+    delays = "|".join([str(duration_ms)] * channels)
+    
+    cmd = [
+        "ffmpeg", "-y",
+        "-i", str(input_file),
+        "-af", f"adelay={delays}",
+        str(output_file)
+    ]
+    
+    print(f"Running ffmpeg (add_silence): {' '.join(cmd)}")
+    try:
+        subprocess.run(cmd, check=True, capture_output=True, text=True)
+    except subprocess.CalledProcessError as e:
+        msg = f"FFmpeg add_silence failed.\nStderr: {e.stderr}"
+        print(msg)
+        raise RuntimeError(msg) from e
+
+
