@@ -440,6 +440,100 @@ def color_to_ass(hex_color: str) -> str:
     r, g, b = hex_color[:2], hex_color[2:4], hex_color[4:]
     return f"&H{b}{g}{r}"
 
+def parse_timestamp(t_str: str) -> float:
+    # 00:00:27,330
+    h, m, s_ms = t_str.split(':')
+    s, ms = s_ms.split(',')
+    return int(h) * 3600 + int(m) * 60 + int(s) + int(ms) / 1000.0
+
+def format_timestamp(t: float) -> str:
+    h = int(t // 3600)
+    m = int((t % 3600) // 60)
+    s = int(t % 60)
+    ms = int(round((t - int(t)) * 1000))
+    if ms >= 1000:
+        s += 1
+        ms -= 1000
+    if s >= 60:
+        m += 1
+        s -= 60
+    if m >= 60:
+        h += 1
+        m -= 60
+    return f"{h:02d}:{m:02d}:{s:02d},{ms:03d}"
+
+def process_srt_limit_lines(srt_path: Path, max_lines: int):
+    if max_lines <= 0:
+        return
+        
+    try:
+        content = srt_path.read_text(encoding='utf-8')
+    except Exception as e:
+        print(f"Error reading SRT: {e}")
+        return
+
+    # Normalize line endings
+    content = content.replace('\r\n', '\n').replace('\r', '\n')
+    blocks = content.strip().split('\n\n')
+    
+    new_blocks = []
+    
+    for block in blocks:
+        lines = block.strip().split('\n')
+        if len(lines) < 3: 
+            continue
+            
+        # Parse logic
+        if "-->" in lines[1]:
+            time_line = lines[1]
+            text_lines = lines[2:]
+        elif "-->" in lines[0]:
+            time_line = lines[0]
+            text_lines = lines[1:]
+        else:
+            continue
+        
+        try:
+            start_str, end_str = time_line.split(' --> ')
+            start_t = parse_timestamp(start_str.strip())
+            end_t = parse_timestamp(end_str.strip())
+        except Exception as e:
+            print(f"Error parsing timestamp {time_line}: {e}")
+            continue
+
+        if len(text_lines) <= max_lines:
+            new_blocks.append((start_t, end_t, text_lines))
+        else:
+            # Split
+            duration = end_t - start_t
+            full_text_len = sum(len(l) for l in text_lines)
+            if full_text_len == 0: full_text_len = 1
+            
+            chunks = [text_lines[i:i + max_lines] for i in range(0, len(text_lines), max_lines)]
+            
+            current_start = start_t
+            for i, chunk in enumerate(chunks):
+                chunk_len = sum(len(l) for l in chunk)
+                
+                if i == len(chunks) - 1:
+                    chunk_end = end_t
+                else:
+                    ratio = chunk_len / full_text_len
+                    chunk_dur = duration * ratio
+                    chunk_end = current_start + chunk_dur
+                
+                new_blocks.append((current_start, chunk_end, chunk))
+                current_start = chunk_end
+                
+    # Rewrite
+    with open(srt_path, 'w', encoding='utf-8') as f:
+        for i, (s, e, lines) in enumerate(new_blocks, 1):
+             f.write(f"{i}\n")
+             f.write(f"{format_timestamp(s)} --> {format_timestamp(e)}\n")
+             for l in lines:
+                 f.write(l + "\n")
+             f.write("\n")
+
 def add_subtitles(
     video_input: Path,
     srt_input: Path,
@@ -447,8 +541,13 @@ def add_subtitles(
     position_y: int = 0, # 0 = Base absoluta, + = Sobe em direção ao topo
     font_color: str = "#FFFFFF",
     outline_color: str = "#000000",
-    font_size: int = 24
+    font_size: int = 24,
+    max_lines: Optional[int] = None
 ):
+    
+    # Process SRT to enforce max_lines if requested
+    if max_lines is not None and max_lines > 0:
+        process_srt_limit_lines(srt_input, max_lines)
     
     # Prepara cores
     primary_colour = color_to_ass(font_color)

@@ -246,7 +246,8 @@ async def add_subtitles_endpoint(
     font_color: str = Form("#FFFFFF"),
     outline_color: str = Form("#000000"),
     font_size: int = Form(24),
-    output_name: str = Form("video_subbed")
+    output_name: str = Form("video_subbed"),
+    max_lines: Optional[int] = Form(None)
 ):
     temp_dir = tempfile.mkdtemp()
     try:
@@ -277,7 +278,8 @@ async def add_subtitles_endpoint(
             position_y=position_y,      # <--- Corrigido de vertical_pos para position_y
             font_color=font_color,
             outline_color=outline_color,
-            font_size=font_size
+            font_size=font_size,
+            max_lines=max_lines
         )
         # ----------------------------
         
