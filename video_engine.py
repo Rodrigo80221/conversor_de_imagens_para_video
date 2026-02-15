@@ -502,41 +502,53 @@ def process_srt_limit_lines(srt_path: Path, max_lines: int, max_chars: int = 40)
             print(f"Error parsing timestamp {time_line}: {e}")
             continue
 
-        # 1. Wrap long lines FIRST
-        wrapped_lines = []
-        for line in text_lines:
-            # textwrap.wrap returns a list of strings
-            wrapped = textwrap.wrap(line, width=max_chars)
-            # If empty (blank line), keep it empty? or skip? 
-            # textwrap for empty string returns empty list usually, let's check
-            if not wrapped and line.strip() == "":
-                 wrapped = [""]
-            elif not wrapped:
-                 # line was whitespace
-                 pass
-            wrapped_lines.extend(wrapped)
+        # 1. FLATTEN and RE-WRAP
+        # The user wants to "optimize space". Typical SRT has line breaks for phrasing.
+        # But if we want to enforce max_lines and avoid FFmpeg wrapping, it's safer to flow the text.
+        # We join with spaces.
+        full_text = " ".join([l.strip() for l in text_lines]).strip()
+        
+        # Wrap strictly using max_chars
+        wrapped_lines = textwrap.wrap(full_text, width=max_chars)
+        
+        # If empty, ensure at least one empty line
+        if not wrapped_lines:
+            wrapped_lines = [""]
             
         text_lines = wrapped_lines
         
         # 2. Check line count
         if len(text_lines) <= max_lines:
+            # If it fits, use it. 
+            # (Optional: We could try to balance lines if len < max_lines but > 1, 
+            # but textwrap fills top-down. Usually acceptable).
             new_blocks.append((start_t, end_t, text_lines))
         else:
-            # Split
+            # Split into multiple time-blocks
+            # We need to distribute the "duration" among the chunks of lines.
             duration = end_t - start_t
-            full_text_len = sum(len(l) for l in text_lines)
-            if full_text_len == 0: full_text_len = 1
             
+            # Create chunks of max_lines
+            # e.g. 5 lines, max_lines=2 -> [2, 2, 1]
             chunks = [text_lines[i:i + max_lines] for i in range(0, len(text_lines), max_lines)]
+            
+            # Distribute time based on character count ratio
+            full_text_len = len(full_text)
+            if full_text_len == 0: full_text_len = 1
             
             current_start = start_t
             for i, chunk in enumerate(chunks):
-                chunk_len = sum(len(l) for l in chunk)
+                # Calculate chunk text length
+                chunk_text = " ".join(chunk)
+                chunk_len = len(chunk_text)
                 
                 if i == len(chunks) - 1:
                     chunk_end = end_t
                 else:
+                    # Proportional duration
                     ratio = chunk_len / full_text_len
+                    # Heuristic: Add a small buffer or min duration? 
+                    # For now strictly proportional
                     chunk_dur = duration * ratio
                     chunk_end = current_start + chunk_dur
                 
@@ -573,13 +585,11 @@ def add_subtitles(
         if w > 0 and font_size > 0:
             # Heuristic: 
             # Average char width ~ 0.5 * font_size (pixels)
-            # Safe area ~ 0.9 * width
-            # Max chars = (0.9 * w) / (0.5 * font_size)
-            # Example: 1080 / (0.5 * 24) = 1080 / 12 = 90 chars.
-            # Example: 300 / 12 = 25 chars.
-            # Let's use 0.6 factor to be safer (wider chars)
-            max_chars = int((w * 0.9) / (font_size * 0.6))
-            if max_chars < 10: max_chars = 10 # Sanity check
+            # Safe area ~ 0.85 * width (give margin)
+            # Max chars = (0.85 * w) / (0.65 * font_size)
+            # Increased char width estimate to 0.65 just to be safer (wider chars)
+            max_chars = int((w * 0.85) / (font_size * 0.65))
+            if max_chars < 15: max_chars = 15 
             print(f"DEBUG: Estimated max_chars={max_chars} for width={w}, font={font_size}")
     except Exception as e:
         print(f"Warning: Could not determine video dimensions for char limit: {e}")
