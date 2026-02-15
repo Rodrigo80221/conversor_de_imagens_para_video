@@ -4,4 +4,6 @@ python-multipart
 replicate
 requests
 openai-whisper
+openai-whisper
 torch
+html2image

@@ -14,6 +14,7 @@ from pathlib import Path
 import zipfile
 import video_engine
 import music_engine
+import html_img_engine
 from starlette.concurrency import run_in_threadpool
 import base64
 
@@ -599,6 +600,45 @@ async def upload_to_baserow(
     except Exception as e:
         if 'temp_dir' in locals() and os.path.exists(temp_dir):
             shutil.rmtree(temp_dir)
+        return {"error": str(e)}
+
+
+
+@app.post("/html-to-image")
+async def html_to_image_endpoint(
+    background_tasks: BackgroundTasks,
+    html: str = Form(...),
+    css: str = Form(...),
+    width: int = Form(1080),
+    height: int = Form(1920)
+):
+    temp_dir = tempfile.mkdtemp()
+    try:
+        output_filename = "rendered_image.png"
+        output_path = os.path.join(temp_dir, output_filename)
+        
+        await run_in_threadpool(
+            html_img_engine.generate_image_from_html,
+            html=html,
+            css=css,
+            width=width,
+            height=height,
+            output_path=Path(output_path)
+        )
+        
+        if not os.path.exists(output_path):
+             shutil.rmtree(temp_dir)
+             return {"error": "HTML rendering failed (no output file created)"}
+
+        background_tasks.add_task(cleanup_temp_dir, temp_dir)
+        return FileResponse(
+            output_path, 
+            media_type="image/png", 
+            filename=output_filename
+        )
+
+    except Exception as e:
+        shutil.rmtree(temp_dir)
         return {"error": str(e)}
 
 if __name__ == "__main__":
