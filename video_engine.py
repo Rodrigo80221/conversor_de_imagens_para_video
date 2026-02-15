@@ -9,6 +9,7 @@ import warnings
 import math
 import json
 import re
+import textwrap
 
 COMMON_EXTS = [".png", ".jpg", ".jpeg", ".webp"]
 
@@ -462,7 +463,7 @@ def format_timestamp(t: float) -> str:
         m -= 60
     return f"{h:02d}:{m:02d}:{s:02d},{ms:03d}"
 
-def process_srt_limit_lines(srt_path: Path, max_lines: int):
+def process_srt_limit_lines(srt_path: Path, max_lines: int, max_chars: int = 40):
     if max_lines <= 0:
         return
         
@@ -501,6 +502,23 @@ def process_srt_limit_lines(srt_path: Path, max_lines: int):
             print(f"Error parsing timestamp {time_line}: {e}")
             continue
 
+        # 1. Wrap long lines FIRST
+        wrapped_lines = []
+        for line in text_lines:
+            # textwrap.wrap returns a list of strings
+            wrapped = textwrap.wrap(line, width=max_chars)
+            # If empty (blank line), keep it empty? or skip? 
+            # textwrap for empty string returns empty list usually, let's check
+            if not wrapped and line.strip() == "":
+                 wrapped = [""]
+            elif not wrapped:
+                 # line was whitespace
+                 pass
+            wrapped_lines.extend(wrapped)
+            
+        text_lines = wrapped_lines
+        
+        # 2. Check line count
         if len(text_lines) <= max_lines:
             new_blocks.append((start_t, end_t, text_lines))
         else:
@@ -545,9 +563,30 @@ def add_subtitles(
     max_lines: Optional[int] = None
 ):
     
+    # Calculate approx max chars based on video width
+    # We try to wrap before ffmpeg does.
+    # Default fallback
+    max_chars = 40 
+    
+    try:
+        w, h = get_video_dimensions(video_input)
+        if w > 0 and font_size > 0:
+            # Heuristic: 
+            # Average char width ~ 0.5 * font_size (pixels)
+            # Safe area ~ 0.9 * width
+            # Max chars = (0.9 * w) / (0.5 * font_size)
+            # Example: 1080 / (0.5 * 24) = 1080 / 12 = 90 chars.
+            # Example: 300 / 12 = 25 chars.
+            # Let's use 0.6 factor to be safer (wider chars)
+            max_chars = int((w * 0.9) / (font_size * 0.6))
+            if max_chars < 10: max_chars = 10 # Sanity check
+            print(f"DEBUG: Estimated max_chars={max_chars} for width={w}, font={font_size}")
+    except Exception as e:
+        print(f"Warning: Could not determine video dimensions for char limit: {e}")
+
     # Process SRT to enforce max_lines if requested
     if max_lines is not None and max_lines > 0:
-        process_srt_limit_lines(srt_input, max_lines)
+        process_srt_limit_lines(srt_input, max_lines, max_chars=max_chars)
     
     # Prepara cores
     primary_colour = color_to_ass(font_color)
