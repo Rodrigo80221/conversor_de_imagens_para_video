@@ -64,6 +64,46 @@ async def add_silence_endpoint(
         shutil.rmtree(temp_dir)
         return {"error": str(e)}
 
+@app.post("/humanize-audio")
+async def humanize_audio_endpoint(
+    background_tasks: BackgroundTasks,
+    file: UploadFile = File(...),
+    preset: str = Form("celular")
+):
+    temp_dir = tempfile.mkdtemp()
+    try:
+        # Save audio file
+        original_ext = os.path.splitext(file.filename)[1] if file.filename else ".wav"
+        input_path = os.path.join(temp_dir, f"input_audio{original_ext}")
+        
+        with open(input_path, "wb") as f:
+            f.write(await file.read())
+            
+        output_filename = f"audio_humanized{original_ext}"
+        output_path = os.path.join(temp_dir, output_filename)
+        
+        await run_in_threadpool(
+            video_engine.humanize_audio,
+            input_file=Path(input_path),
+            output_file=Path(output_path),
+            preset=preset
+        )
+        
+        if not os.path.exists(output_path):
+             shutil.rmtree(temp_dir)
+             return {"error": "Humanization failed (no output file created)"}
+
+        background_tasks.add_task(cleanup_temp_dir, temp_dir)
+        return FileResponse(
+            output_path, 
+            media_type="audio/wav", 
+            filename=output_filename
+        )
+
+    except Exception as e:
+        shutil.rmtree(temp_dir)
+        return {"error": str(e)}
+
 @app.post("/get-duration")
 async def get_audio_duration(file: UploadFile = File(...)):
     # Lê o arquivo de áudio da memória
