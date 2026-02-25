@@ -14,6 +14,7 @@ from pathlib import Path
 import zipfile
 import video_engine
 import music_engine
+import html_img_engine
 from starlette.concurrency import run_in_threadpool
 import base64
 
@@ -52,6 +53,46 @@ async def add_silence_endpoint(
         if not os.path.exists(output_path):
              shutil.rmtree(temp_dir)
              return {"error": "Silence addition failed (no output file created)"}
+
+        background_tasks.add_task(cleanup_temp_dir, temp_dir)
+        return FileResponse(
+            output_path, 
+            media_type="audio/wav", 
+            filename=output_filename
+        )
+
+    except Exception as e:
+        shutil.rmtree(temp_dir)
+        return {"error": str(e)}
+
+@app.post("/humanize-audio")
+async def humanize_audio_endpoint(
+    background_tasks: BackgroundTasks,
+    file: UploadFile = File(...),
+    preset: str = Form("celular")
+):
+    temp_dir = tempfile.mkdtemp()
+    try:
+        # Save audio file
+        original_ext = os.path.splitext(file.filename)[1] if file.filename else ".wav"
+        input_path = os.path.join(temp_dir, f"input_audio{original_ext}")
+        
+        with open(input_path, "wb") as f:
+            f.write(await file.read())
+            
+        output_filename = f"audio_humanized{original_ext}"
+        output_path = os.path.join(temp_dir, output_filename)
+        
+        await run_in_threadpool(
+            video_engine.humanize_audio,
+            input_file=Path(input_path),
+            output_file=Path(output_path),
+            preset=preset
+        )
+        
+        if not os.path.exists(output_path):
+             shutil.rmtree(temp_dir)
+             return {"error": "Humanization failed (no output file created)"}
 
         background_tasks.add_task(cleanup_temp_dir, temp_dir)
         return FileResponse(
@@ -246,7 +287,8 @@ async def add_subtitles_endpoint(
     font_color: str = Form("#FFFFFF"),
     outline_color: str = Form("#000000"),
     font_size: int = Form(24),
-    output_name: str = Form("video_subbed")
+    output_name: str = Form("video_subbed"),
+    max_lines: Optional[int] = Form(None)
 ):
     temp_dir = tempfile.mkdtemp()
     try:
@@ -277,7 +319,8 @@ async def add_subtitles_endpoint(
             position_y=position_y,      # <--- Corrigido de vertical_pos para position_y
             font_color=font_color,
             outline_color=outline_color,
-            font_size=font_size
+            font_size=font_size,
+            max_lines=max_lines
         )
         # ----------------------------
         
@@ -558,6 +601,45 @@ async def upload_to_baserow(
     except Exception as e:
         if 'temp_dir' in locals() and os.path.exists(temp_dir):
             shutil.rmtree(temp_dir)
+        return {"error": str(e)}
+
+
+
+@app.post("/html-to-image")
+async def html_to_image_endpoint(
+    background_tasks: BackgroundTasks,
+    html: str = Form(...),
+    css: str = Form(...),
+    width: int = Form(1080),
+    height: int = Form(1920)
+):
+    temp_dir = tempfile.mkdtemp()
+    try:
+        output_filename = "rendered_image.png"
+        output_path = os.path.join(temp_dir, output_filename)
+        
+        await run_in_threadpool(
+            html_img_engine.generate_image_from_html,
+            html=html,
+            css=css,
+            width=width,
+            height=height,
+            output_path=Path(output_path)
+        )
+        
+        if not os.path.exists(output_path):
+             shutil.rmtree(temp_dir)
+             return {"error": "HTML rendering failed (no output file created)"}
+
+        background_tasks.add_task(cleanup_temp_dir, temp_dir)
+        return FileResponse(
+            output_path, 
+            media_type="image/png", 
+            filename=output_filename
+        )
+
+    except Exception as e:
+        shutil.rmtree(temp_dir)
         return {"error": str(e)}
 
 if __name__ == "__main__":

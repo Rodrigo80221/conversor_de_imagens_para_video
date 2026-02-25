@@ -5,7 +5,7 @@ NIXPACKS_PYTHON_VERSION = "3.11"
 [phases.setup]
 # AQUI ESTÁ A CORREÇÃO:
 # Adicionamos "python311" (o interpretador) E "python311Packages.pip" (o instalador)
-nixPkgs = ["python311", "python311Packages.pip", "ffmpeg", "gcc"]
+nixPkgs = ["python311", "python311Packages.pip", "ffmpeg", "gcc", "chromium"]
 
 [phases.install]
 # Usamos 'python3' pois o pacote python311 cria esse atalho
