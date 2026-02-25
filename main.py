@@ -337,6 +337,7 @@ async def create_images_endpoint(
     background_tasks: BackgroundTasks,
     token: str = Form(...),
     payload: str = Form(...),
+    reference_url: Optional[str] = Form(None),
     files: List[UploadFile] = File(None)
 ):
     temp_dir = tempfile.mkdtemp()
@@ -406,9 +407,9 @@ async def create_images_endpoint(
                 parts = [{"text": prompt}]
                 
                 # Reference Image URL
-                if scene.get("actor_ref") and scene.get("actor_url"):
+                if scene.get("actor_ref") and reference_url:
                     try:
-                        actor_url = scene["actor_url"]
+                        actor_url = reference_url
                         dl_resp = requests.get(actor_url)
                         if dl_resp.status_code == 200:
                             mime = dl_resp.headers.get("Content-Type", "image/jpeg")
