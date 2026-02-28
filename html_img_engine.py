@@ -32,6 +32,20 @@ class HtmlImageEngine:
             # On some systems, we need to point to chromium executable explicitly if not found in PATH
             browser_executable = os.environ.get("CHROME_BIN")
             
+            if not browser_executable:
+                possible_paths = [
+                    r"C:\Program Files\Google\Chrome\Application\chrome.exe",
+                    r"C:\Program Files (x86)\Google\Chrome\Application\chrome.exe",
+                    r"C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe",
+                    "/usr/bin/google-chrome",
+                    "/usr/bin/chromium",
+                    "/usr/bin/chromium-browser"
+                ]
+                for p in possible_paths:
+                    if os.path.exists(p):
+                        browser_executable = p
+                        break
+            
             # Initialize Html2Image
             # output_path here means "directory where to save the files"
             # We want to save to our temp_dir first
