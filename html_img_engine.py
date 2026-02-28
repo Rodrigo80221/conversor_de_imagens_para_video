@@ -60,13 +60,14 @@ class HtmlImageEngine:
                         browser_executable = p
                         break
             
-            if not browser_executable:
-                raise RuntimeError(
-                    "Html2Image failed: Não foi possível encontrar o Chrome/Chromium no Hostinger. "
-                    "Se você estiver usando uma hospedagem VPS, instale o Chromium "
-                    "rodando: 'apt-get install chromium-browser' ou 'apt-get install chromium'. "
-                    "Se for uma hospedagem compartilhada, o Chrome pode não estar disponível."
-                )
+            # Additional flags for running in docker/container environments
+            flags = [
+                '--no-sandbox', 
+                '--disable-gpu', 
+                '--hide-scrollbars',
+                '--disable-dev-shm-usage',
+                '--disable-web-security' # Sometimes helpful for local assets
+            ]
             
             # Initialize Html2Image
             # output_path here means "directory where to save the files"

@@ -3,12 +3,21 @@
 NIXPACKS_PYTHON_VERSION = "3.11"
 
 [phases.setup]
-# AQUI ESTÁ A CORREÇÃO:
-# Adicionamos "python311" (o interpretador) E "python311Packages.pip" (o instalador)
-nixPkgs = ["python311", "python311Packages.pip", "ffmpeg", "gcc", "chromium"]
+# Adicionamos as ferramentas base necessárias pelo Python e Nixpacks
+nixPkgs = ["python311", "python311Packages.pip", "ffmpeg", "gcc", "wget"]
+
+[phases.install_chrome]
+# Esta fase ocorre durante a Reconstrução, o que garante acesso permanente ao Chrome sem sumir nos reinícios!
+cmds = [
+    "apt-get update -y",
+    "wget -q https://dl.google.com/linux/direct/google-chrome-stable_current_amd64.deb",
+    "apt-get install -y ./google-chrome-stable_current_amd64.deb",
+    "rm -f google-chrome-stable_current_amd64.deb"
+]
 
 [phases.install]
-# Usamos 'python3' pois o pacote python311 cria esse atalho
+dependsOn = ["setup", "install_chrome"]
+# Instalamos as bibliotecas em seguida
 cmds = ["python3 -m pip install --upgrade pip", "python3 -m pip install -r requirements.txt"]
 
 [start]
