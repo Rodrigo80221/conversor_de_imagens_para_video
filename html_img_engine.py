@@ -35,7 +35,7 @@ class HtmlImageEngine:
             if not browser_executable:
                 # Use shutil.which to find the executable dynamically from PATH
                 # This is crucial for environments like Nixpacks where binaries are completely outside /usr/bin/
-                for cmd in ['chromium', 'chromium-browser', 'google-chrome', 'chrome', 'msedge']:
+                for cmd in ['chromium', 'chromium-browser', 'google-chrome', 'google-chrome-stable', 'chrome', 'msedge']:
                     found = shutil.which(cmd)
                     if found:
                         browser_executable = found
@@ -45,12 +45,28 @@ class HtmlImageEngine:
                 possible_paths = [
                     r"C:\Program Files\Google\Chrome\Application\chrome.exe",
                     r"C:\Program Files (x86)\Google\Chrome\Application\chrome.exe",
-                    r"C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe"
+                    r"C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe",
+                    "/usr/bin/google-chrome",
+                    "/usr/bin/google-chrome-stable",
+                    "/usr/bin/chromium",
+                    "/usr/bin/chromium-browser",
+                    "/snap/bin/chromium",
+                    "/snap/chromium/current/usr/lib/chromium-browser/chrome",
+                    "/opt/google/chrome/chrome",
+                    "/opt/google/chrome/google-chrome"
                 ]
                 for p in possible_paths:
                     if os.path.exists(p):
                         browser_executable = p
                         break
+            
+            if not browser_executable:
+                raise RuntimeError(
+                    "Html2Image failed: Não foi possível encontrar o Chrome/Chromium no Hostinger. "
+                    "Se você estiver usando uma hospedagem VPS, instale o Chromium "
+                    "rodando: 'apt-get install chromium-browser' ou 'apt-get install chromium'. "
+                    "Se for uma hospedagem compartilhada, o Chrome pode não estar disponível."
+                )
             
             # Initialize Html2Image
             # output_path here means "directory where to save the files"
