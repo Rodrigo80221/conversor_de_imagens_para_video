@@ -33,13 +33,19 @@ class HtmlImageEngine:
             browser_executable = os.environ.get("CHROME_BIN")
             
             if not browser_executable:
+                # Use shutil.which to find the executable dynamically from PATH
+                # This is crucial for environments like Nixpacks where binaries are completely outside /usr/bin/
+                for cmd in ['chromium', 'chromium-browser', 'google-chrome', 'chrome', 'msedge']:
+                    found = shutil.which(cmd)
+                    if found:
+                        browser_executable = found
+                        break
+
+            if not browser_executable:
                 possible_paths = [
                     r"C:\Program Files\Google\Chrome\Application\chrome.exe",
                     r"C:\Program Files (x86)\Google\Chrome\Application\chrome.exe",
-                    r"C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe",
-                    "/usr/bin/google-chrome",
-                    "/usr/bin/chromium",
-                    "/usr/bin/chromium-browser"
+                    r"C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe"
                 ]
                 for p in possible_paths:
                     if os.path.exists(p):
