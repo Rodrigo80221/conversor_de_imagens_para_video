@@ -30,18 +30,22 @@ class HtmlImageEngine:
             ]
             
             # On some systems, we need to point to chromium executable explicitly if not found in PATH
-            browser = None
-            if os.environ.get("CHROME_BIN"):
-                browser = os.environ.get("CHROME_BIN")
+            browser_executable = os.environ.get("CHROME_BIN")
             
             # Initialize Html2Image
             # output_path here means "directory where to save the files"
             # We want to save to our temp_dir first
-            hti = Html2Image(
-                output_path=temp_dir,
-                custom_flags=flags, 
-                browser=browser
-            )
+            if browser_executable:
+                hti = Html2Image(
+                    output_path=temp_dir,
+                    custom_flags=flags, 
+                    browser_executable=browser_executable
+                )
+            else:
+                hti = Html2Image(
+                    output_path=temp_dir,
+                    custom_flags=flags
+                )
 
             # We create a full HTML string with HEAD, BODY, and Style imports
             # This is safer than relying on html2image's parsing of fragments
