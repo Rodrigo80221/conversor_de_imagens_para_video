@@ -20,6 +20,15 @@ import base64
 
 app = FastAPI()
 
+@app.get("/check-chrome")
+def check_chrome():
+    return {
+        "which_chromium": os.popen("which chromium").read().strip(),
+        "which_chromium_browser": os.popen("which chromium-browser").read().strip(),
+        "ls_usr_bin_chromium": os.path.exists("/usr/bin/chromium"),
+        "ls_usr_bin_chromium_browser": os.path.exists("/usr/bin/chromium-browser"),
+    }
+
 @app.get("/")
 def read_root():
     return {"status": "Online", "message": "API de Video/Audio rodando no Easypanel!"}
