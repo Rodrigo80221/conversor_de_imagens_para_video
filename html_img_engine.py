@@ -1,4 +1,3 @@
-
 from html2image import Html2Image
 from pathlib import Path
 import tempfile
@@ -6,146 +5,93 @@ import os
 import shutil
 
 class HtmlImageEngine:
-    def __init__(self):
-        # We initialize Html2Image once if possible, but for thread-safety it might be better per-request or properly pooled
-        pass
-
     def generate_image(self, html: str, css: str, width: int, height: int, output_path: Path):
-        """
-        Renders HTML+CSS to an image.
-        """
-        
-        # Create temp dir
         temp_dir = tempfile.mkdtemp()
-        
+
         try:
-            filename = output_path.name
-            
-            # Additional flags for running in docker/container environments
+            # Flags recomendadas para container
             flags = [
-                '--no-sandbox', 
-                '--disable-gpu', 
-                '--hide-scrollbars',
-                '--disable-web-security' # Sometimes helpful for local assets
+                "--no-sandbox",
+                "--disable-dev-shm-usage",
+                "--disable-gpu",
+                "--hide-scrollbars",
+                "--headless=new",
             ]
-            
-            # On some systems, we need to point to chromium executable explicitly if not found in PATH
+
+            # 1) Preferir variável de ambiente (determinístico)
             browser_executable = os.environ.get("CHROME_BIN")
-            
+
+            # 2) Fallback para paths comuns no Linux/container
             if not browser_executable:
-                # Use shutil.which to find the executable dynamically from PATH
-                # This is crucial for environments like Nixpacks where binaries are completely outside /usr/bin/
-                for cmd in ['chromium', 'chromium-browser', 'google-chrome', 'google-chrome-stable', 'chrome', 'msedge']:
+                for p in ["/usr/bin/chromium", "/usr/bin/chromium-browser", "/usr/bin/google-chrome", "/opt/google/chrome/chrome"]:
+                    if os.path.exists(p):
+                        browser_executable = p
+                        break
+
+            # 3) Fallback por PATH (casos nixpacks etc.)
+            if not browser_executable:
+                for cmd in ["chromium", "chromium-browser", "google-chrome", "google-chrome-stable", "chrome"]:
                     found = shutil.which(cmd)
                     if found:
                         browser_executable = found
                         break
 
-            if not browser_executable:
-                possible_paths = [
-                    r"C:\Program Files\Google\Chrome\Application\chrome.exe",
-                    r"C:\Program Files (x86)\Google\Chrome\Application\chrome.exe",
-                    r"C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe",
-                    "/usr/bin/google-chrome",
-                    "/usr/bin/google-chrome-stable",
-                    "/usr/bin/chromium",
-                    "/usr/bin/chromium-browser",
-                    "/snap/bin/chromium",
-                    "/snap/chromium/current/usr/lib/chromium-browser/chrome",
-                    "/opt/google/chrome/chrome",
-                    "/opt/google/chrome/google-chrome"
-                ]
-                for p in possible_paths:
-                    if os.path.exists(p):
-                        browser_executable = p
-                        break
-            
-            # Additional flags for running in docker/container environments
-            flags = [
-                '--no-sandbox', 
-                '--disable-gpu', 
-                '--hide-scrollbars',
-                '--disable-dev-shm-usage',
-                '--disable-web-security' # Sometimes helpful for local assets
-            ]
-            
-            # Initialize Html2Image
-            # output_path here means "directory where to save the files"
-            # We want to save to our temp_dir first
+            # Inicializa Html2Image
+            hti_kwargs = dict(output_path=temp_dir, custom_flags=flags)
             if browser_executable:
-                hti = Html2Image(
-                    output_path=temp_dir,
-                    custom_flags=flags, 
-                    browser_executable=browser_executable
-                )
-            else:
-                hti = Html2Image(
-                    output_path=temp_dir,
-                    custom_flags=flags
-                )
+                hti_kwargs["browser_executable"] = browser_executable
 
-            # We create a full HTML string with HEAD, BODY, and Style imports
-            # This is safer than relying on html2image's parsing of fragments
-            full_html = f"""
-<!DOCTYPE html>
+            hti = Html2Image(**hti_kwargs)
+
+            full_html = f"""<!DOCTYPE html>
 <html>
 <head>
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;800&display=swap" rel="stylesheet">
-    <style>
-        body, html {{
-            width: {width}px;
-            height: {height}px;
-            margin: 0;
-            padding: 0;
-            overflow: hidden;
-            background: transparent;
-        }}
-        /* User CSS injected here */
-        {css}
-    </style>
+  <meta charset="utf-8" />
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;800&display=swap" rel="stylesheet">
+  <style>
+    html, body {{
+      width: {width}px;
+      height: {height}px;
+      margin: 0;
+      padding: 0;
+      overflow: hidden;
+      background: transparent;
+    }}
+    {css}
+  </style>
 </head>
 <body>
-    {html}
+  {html}
 </body>
 </html>
 """
-            
-            # Render
-            # We save as 'page.png' or similar because filename might have path issues if passed to save_as?
-            # Actually save_as accepts filename only usually.
+
             temp_filename = "execution.png"
-            
-            # Taking screenshot
+
             hti.screenshot(
                 html_str=full_html,
                 save_as=temp_filename,
-                size=(width, height)
+                size=(width, height),
             )
-            
-            # Locate result
+
             result_path = Path(temp_dir) / temp_filename
-            if result_path.exists():
-                # Move to final destination (which is a Path object provided by caller)
-                # Ensure parent exists? Caller likely provided valid path in existing temp dir.
-                shutil.move(str(result_path), str(output_path))
-            else:
-                 # Last ditch check if it saved with unexpected name
-                 possible = list(Path(temp_dir).glob("*.png"))
-                 if possible:
-                     shutil.move(str(possible[0]), str(output_path))
-                 else:
-                     raise RuntimeError("Image file not generated by html2image.")
-                     
+            if not result_path.exists():
+                pngs = list(Path(temp_dir).glob("*.png"))
+                if pngs:
+                    result_path = pngs[0]
+                else:
+                    raise RuntimeError("Image file not generated by html2image.")
+
+            output_path.parent.mkdir(parents=True, exist_ok=True)
+            shutil.move(str(result_path), str(output_path))
+
         except Exception as e:
-            # Re-raise with context
             raise RuntimeError(f"Html2Image failed: {e}")
         finally:
-            if os.path.exists(temp_dir):
-                shutil.rmtree(temp_dir)
+            shutil.rmtree(temp_dir, ignore_errors=True)
 
-# Singleton instance
 engine_instance = HtmlImageEngine()
 
 def generate_image_from_html(html: str, css: str, width: int, height: int, output_path: Path):

@@ -25,6 +25,9 @@ RUN apt-get update && \
       ca-certificates \
     && rm -rf /var/lib/apt/lists/*
 
+# 👇 ADICIONE ESTA LINHA
+ENV CHROME_BIN=/usr/bin/chromium
+
 WORKDIR /app
 
 COPY requirements.txt .
