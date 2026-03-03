@@ -18,6 +18,7 @@ import music_engine
 import html_img_engine
 from starlette.concurrency import run_in_threadpool
 import base64
+import mimetypes
 
 app = FastAPI()
 
@@ -607,6 +608,76 @@ async def upload_to_baserow(
                 "error": f"Baserow upload failed: {response.status_code}",
                 "details": response.text
             }
+
+    except Exception as e:
+        if 'temp_dir' in locals() and os.path.exists(temp_dir):
+            shutil.rmtree(temp_dir)
+        return {"error": str(e)}
+
+@app.post("/upload-zip-to-baserow")
+async def upload_zip_to_baserow(
+    token: str = Form(...),
+    file: UploadFile = File(...)
+):
+    try:
+        temp_dir = tempfile.mkdtemp()
+        
+        # Save zip
+        zip_path = os.path.join(temp_dir, file.filename)
+        with open(zip_path, "wb") as f:
+            f.write(await file.read())
+            
+        # Extract zip
+        extract_dir = os.path.join(temp_dir, "extracted")
+        os.makedirs(extract_dir, exist_ok=True)
+        with zipfile.ZipFile(zip_path, 'r') as zip_ref:
+            zip_ref.extractall(extract_dir)
+            
+        url_upload = "https://api.baserow.io/api/user-files/upload-file/"
+        headers = {
+            "Authorization": f"Token {token}" if not token.startswith("Token ") else token
+        }
+        
+        uploaded_files = []
+        errors = []
+        
+        for root, _, extracted_files in os.walk(extract_dir):
+            for filename in extracted_files:
+                file_path = os.path.join(root, filename)
+                
+                # Check if it's not a directory and ignore __MACOSX / .DS_Store etc
+                if filename.startswith('.') or "__MACOSX" in root:
+                    continue
+                
+                mime_type, _ = mimetypes.guess_type(file_path)
+                if mime_type is None:
+                    mime_type = "application/octet-stream"
+                
+                with open(file_path, "rb") as arquivo:
+                    baserow_files = {
+                        "file": (filename, arquivo, mime_type)
+                    }
+                    response = requests.post(url_upload, headers=headers, files=baserow_files)
+                    
+                if response.status_code == 200:
+                    uploaded_files.append({
+                        "filename": filename,
+                        "data": response.json() # contains 'url', etc.
+                    })
+                else:
+                    errors.append({
+                        "filename": filename,
+                        "status_code": response.status_code,
+                        "details": response.text
+                    })
+
+        # Cleanup
+        shutil.rmtree(temp_dir)
+        
+        return {
+            "uploaded_files": uploaded_files,
+            "errors": errors
+        }
 
     except Exception as e:
         if 'temp_dir' in locals() and os.path.exists(temp_dir):
