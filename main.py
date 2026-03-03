@@ -614,70 +614,119 @@ async def upload_to_baserow(
             shutil.rmtree(temp_dir)
         return {"error": str(e)}
 
-@app.post("/upload-zip-to-baserow")
-async def upload_zip_to_baserow(
+@app.post("/update-baserow-media")
+async def update_baserow_media(
     token: str = Form(...),
-    file: UploadFile = File(...)
+    table_id: int = Form(...),
+    row_id: int = Form(...),
+    field_name: str = Form("Midia Url"),
+    append_to_existing: bool = Form(False),
+    cover_image: Optional[UploadFile] = File(None),
+    zip_file: Optional[UploadFile] = File(None)
 ):
     try:
         temp_dir = tempfile.mkdtemp()
         
-        # Save zip
-        zip_path = os.path.join(temp_dir, file.filename)
-        with open(zip_path, "wb") as f:
-            f.write(await file.read())
-            
-        # Extract zip
-        extract_dir = os.path.join(temp_dir, "extracted")
-        os.makedirs(extract_dir, exist_ok=True)
-        with zipfile.ZipFile(zip_path, 'r') as zip_ref:
-            zip_ref.extractall(extract_dir)
-            
-        url_upload = "https://api.baserow.io/api/user-files/upload-file/"
         headers = {
             "Authorization": f"Token {token}" if not token.startswith("Token ") else token
         }
         
-        uploaded_files = []
-        errors = []
+        files_to_update = []
         
-        for root, _, extracted_files in os.walk(extract_dir):
-            for filename in extracted_files:
-                file_path = os.path.join(root, filename)
+        row_url = f"https://api.baserow.io/api/database/rows/table/{table_id}/{row_id}/?user_field_names=true"
+        
+        # Opcional: manter imagens existentes
+        if append_to_existing:
+            row_resp = requests.get(row_url, headers=headers)
+            if row_resp.status_code == 200:
+                existing_files = row_resp.json().get(field_name, [])
+                if isinstance(existing_files, list):
+                    files_to_update = [{"name": f["name"]} for f in existing_files if "name" in f]
+        
+        uploaded_files_info = []
+        errors = []
+        url_upload = "https://api.baserow.io/api/user-files/upload-file/"
+        
+        # Upload cover_image
+        if cover_image:
+            file_path = os.path.join(temp_dir, cover_image.filename)
+            with open(file_path, "wb") as f:
+                f.write(await cover_image.read())
                 
-                # Check if it's not a directory and ignore __MACOSX / .DS_Store etc
-                if filename.startswith('.') or "__MACOSX" in root:
-                    continue
+            mime_type, _ = mimetypes.guess_type(file_path)
+            with open(file_path, "rb") as arquivo:
+                baserow_files = {"file": (cover_image.filename, arquivo, mime_type or "application/octet-stream")}
+                r = requests.post(url_upload, headers=headers, files=baserow_files)
                 
+            if r.status_code == 200:
+                resp_json = r.json()
+                files_to_update.append({"name": resp_json["name"]})
+                uploaded_files_info.append(resp_json)
+            else:
+                errors.append({"filename": cover_image.filename, "error": r.text})
+                
+        # Upload zip_file
+        if zip_file:
+            zip_path = os.path.join(temp_dir, zip_file.filename)
+            with open(zip_path, "wb") as f:
+                f.write(await zip_file.read())
+                
+            extract_dir = os.path.join(temp_dir, "extracted")
+            os.makedirs(extract_dir, exist_ok=True)
+            with zipfile.ZipFile(zip_path, 'r') as zip_ref:
+                zip_ref.extractall(extract_dir)
+                
+            extracted_files_list = []
+            for root, _, extracted_files in os.walk(extract_dir):
+                for filename in extracted_files:
+                    if filename.startswith('.') or "__MACOSX" in root:
+                        continue
+                    extracted_files_list.append(os.path.join(root, filename))
+            
+            extracted_files_list.sort()
+            
+            for file_path in extracted_files_list:
+                filename = os.path.basename(file_path)
                 mime_type, _ = mimetypes.guess_type(file_path)
-                if mime_type is None:
-                    mime_type = "application/octet-stream"
                 
                 with open(file_path, "rb") as arquivo:
-                    baserow_files = {
-                        "file": (filename, arquivo, mime_type)
-                    }
-                    response = requests.post(url_upload, headers=headers, files=baserow_files)
+                    baserow_files = {"file": (filename, arquivo, mime_type or "application/octet-stream")}
+                    r = requests.post(url_upload, headers=headers, files=baserow_files)
                     
-                if response.status_code == 200:
-                    uploaded_files.append({
-                        "filename": filename,
-                        "data": response.json() # contains 'url', etc.
-                    })
+                if r.status_code == 200:
+                    resp_json = r.json()
+                    files_to_update.append({"name": resp_json["name"]})
+                    uploaded_files_info.append(resp_json)
                 else:
-                    errors.append({
-                        "filename": filename,
-                        "status_code": response.status_code,
-                        "details": response.text
-                    })
+                    errors.append({"filename": filename, "error": r.text})
 
-        # Cleanup
+        # Update row na tabela
+        patch_headers = headers.copy()
+        patch_headers["Content-Type"] = "application/json"
+        
+        patch_payload = {
+            field_name: files_to_update
+        }
+        
+        patch_resp = requests.patch(row_url, headers=patch_headers, json=patch_payload)
+        
         shutil.rmtree(temp_dir)
         
-        return {
-            "uploaded_files": uploaded_files,
-            "errors": errors
-        }
+        if patch_resp.status_code == 200:
+            return {
+                "success": True,
+                "row": patch_resp.json(),
+                "uploaded_files": uploaded_files_info,
+                "errors": errors
+            }
+        else:
+            return {
+                "success": False,
+                "error": f"Failed to update row (Status {patch_resp.status_code})",
+                "details": patch_resp.text,
+                "uploaded_files": uploaded_files_info,
+                "errors": errors
+            }
 
     except Exception as e:
         if 'temp_dir' in locals() and os.path.exists(temp_dir):
