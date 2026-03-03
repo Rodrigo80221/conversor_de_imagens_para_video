@@ -1,4 +1,5 @@
 from fastapi import FastAPI, UploadFile, File, Form, BackgroundTasks
+from pydantic import BaseModel
 from typing import Optional, List
 from enum import Enum
 from fastapi.responses import FileResponse
@@ -651,6 +652,66 @@ async def html_to_image_endpoint(
         shutil.rmtree(temp_dir)
         return {"error": str(e)}
 
-if __name__ == "__main__":
+class HtmlImageItem(BaseModel):
+    html: str
+    css: str
 
+class BatchHtmlImageRequest(BaseModel):
+    width: int = 1080
+    height: int = 1920
+    create_first_image: bool = False
+    Images: List[HtmlImageItem]
+
+@app.post("/batch-html-to-image")
+async def batch_html_to_image_endpoint(
+    background_tasks: BackgroundTasks,
+    request: BatchHtmlImageRequest
+):
+    temp_dir = tempfile.mkdtemp()
+    try:
+        images_data = []
+        
+        for idx, img_data in enumerate(request.Images):
+            # O default é não criar a primeira imagem (idx == 0)
+            if idx == 0 and not request.create_first_image:
+                continue
+                
+            output_filename = f"image_{idx + 1}.png"
+            output_path = os.path.join(temp_dir, output_filename)
+            
+            await run_in_threadpool(
+                html_img_engine.generate_image_from_html,
+                html=img_data.html,
+                css=img_data.css,
+                width=request.width,
+                height=request.height,
+                output_path=Path(output_path)
+            )
+            
+            if os.path.exists(output_path):
+                images_data.append((output_filename, output_path))
+            else:
+                shutil.rmtree(temp_dir)
+                return {"error": f"Failed to generate {output_filename}"}
+                
+        # Criação do arquivo zip contendo todas as imagens
+        zip_filename = "batch_images.zip"
+        zip_path = os.path.join(temp_dir, zip_filename)
+        
+        with zipfile.ZipFile(zip_path, 'w') as zf:
+            for fname, filepath in images_data:
+                zf.write(filepath, arcname=fname)
+                
+        background_tasks.add_task(cleanup_temp_dir, temp_dir)
+        return FileResponse(
+            zip_path, 
+            media_type="application/zip", 
+            filename=zip_filename
+        )
+
+    except Exception as e:
+        shutil.rmtree(temp_dir)
+        return {"error": str(e)}
+
+if __name__ == "__main__":
     uvicorn.run(app, host="0.0.0.0", port=80)
