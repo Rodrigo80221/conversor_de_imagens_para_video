@@ -96,7 +96,7 @@ def get_video_settings(cfg: Dict) -> Tuple[int, int, int]:
 
 
 
-def effect_filter(effect: Dict, w: int, h: int, fps: int, duration: float) -> str:
+def effect_filter(effect: Dict, w: int, h: int, fps: int, duration: float, idx: int = 0) -> str:
 
     etype = (effect or {}).get("type", "none")
 
@@ -198,7 +198,163 @@ def effect_filter(effect: Dict, w: int, h: int, fps: int, duration: float) -> st
 
 
 
+    if etype == "pan":
+        direction = effect.get("direction", "left_to_right")
+        speed = float(effect.get("speed", 10))
+        extra_w = int(speed * duration)
+        wide_w = w + extra_w
+        s_base = f"scale={wide_w}:{h}:force_original_aspect_ratio=increase"
+        if direction == "left_to_right":
+            x_expr = f"(iw-{w})/2 + {extra_w/2.0} - {speed}*t"
+        else:
+            x_expr = f"(iw-{w})/2 - {extra_w/2.0} + {speed}*t"
+        y_expr = f"(ih-{h})/2"
+        return f"{s_base},crop={w}:{h}:x='{x_expr}':y='{y_expr}',fps={fps},format=yuv420p"
+
+    if etype == "parallax_fake":
+        bg_speed = float(effect.get("bg_speed", 5))
+        fg_speed = float(effect.get("fg_speed", 15))
+        blur_val = int(effect.get("blur", 15))
+        scale = float(effect.get("scale", 1.15))
+        return (
+            f"split=2[bg_in_{idx}][fg_in_{idx}];"
+            f"[bg_in_{idx}]scale={int(w*scale)}:{int(h*scale)}:force_original_aspect_ratio=increase,crop={int(w*scale)}:{int(h*scale)},boxblur={blur_val},crop={w}:{h}:x='(iw-{w})/2 + {bg_speed}*t':y='(ih-{h})/2'[bg_{idx}];"
+            f"[fg_in_{idx}]scale={w}:{h}:force_original_aspect_ratio=decrease[fg_{idx}];"
+            f"[bg_{idx}][fg_{idx}]overlay=x='(main_w-overlay_w)/2 + {fg_speed}*t':y='(main_h-overlay_h)/2',"
+            f"fps={fps},format=yuv420p"
+        )
+
+    if etype == "focus_reveal":
+        direction = effect.get("direction", "left_to_right")
+        blur_strength = int(effect.get("blur_strength", 12))
+        softness = float(effect.get("softness", 0.3))
+        mult = 1.0 / max(0.01, softness)
+        offset_max = 1.0 + softness
+        if direction in ("left_to_center", "left_to_right"):
+            mask_expr = f"clip(((T/{duration})*{offset_max} - X/W)*{mult}, 0, 1)"
+        else:
+            mask_expr = f"clip(((T/{duration})*{offset_max} - (1-X/W))*{mult}, 0, 1)"
+        return (
+            f"{base},split=2[sharp_in_{idx}][blur_in_{idx}];"
+            f"[blur_in_{idx}]boxblur={blur_strength}[bg_{idx}];"
+            f"[sharp_in_{idx}]format=yuva420p,geq=a='255*{mask_expr}'[fg_{idx}];"
+            f"[bg_{idx}][fg_{idx}]overlay,fps={fps},format=yuv420p"
+        )
+
+    if etype == "zoom_pan":
+        zs = float(effect.get("zoom_start", 1.0))
+        ze = float(effect.get("zoom_end", 1.08))
+        direction = effect.get("direction", "left_to_right")
+        frames = max(1, int(round(duration * fps)))
+        step = (ze - zs) / frames
+        if direction == "left_to_right":
+            x_expr = "(1 - on/d)*(iw - iw/zoom)"
+            y_expr = "ih/2-(ih/zoom/2)"
+        elif direction == "right_to_left":
+            x_expr = "(on/d)*(iw - iw/zoom)"
+            y_expr = "ih/2-(ih/zoom/2)"
+        elif direction == "top_to_bottom":
+            x_expr = "iw/2-(iw/zoom/2)"
+            y_expr = "(on/d)*(ih - ih/zoom)"
+        elif direction == "bottom_to_top":
+            x_expr = "iw/2-(iw/zoom/2)"
+            y_expr = "(1 - on/d)*(ih - ih/zoom)"
+        else:
+            x_expr = "iw/2-(iw/zoom/2)"
+            y_expr = "ih/2-(ih/zoom/2)"
+            
+        return (
+            f"{base},"
+            f"zoompan=z='if(eq(on,0),{zs},min(zoom+{step},{ze}))':"
+            f"x='{x_expr}':y='{y_expr}':"
+            f"d={frames}:s={w}x{h}:fps={fps},"
+            f"format=yuv420p"
+        )
+
+    if etype == "micro_motion":
+        zs, ze = 1.0, 1.03
+        frames = max(1, int(round(duration * fps)))
+        step = (ze - zs) / frames
+        x_expr = "(iw/2-(iw/zoom/2)) + (on/d)*10"
+        y_expr = "(ih/2-(ih/zoom/2)) + (on/d)*5"
+        return (
+            f"{base},"
+            f"zoompan=z='if(eq(on,0),{zs},min(zoom+{step},{ze}))':"
+            f"x='{x_expr}':y='{y_expr}':"
+            f"d={frames}:s={w}x{h}:fps={fps},"
+            f"format=yuv420p"
+        )
+
+    if etype == "vignette_motion":
+        frames = max(1, int(round(duration * fps)))
+        return (
+            f"{base},"
+            f"zoompan=z='if(eq(on,0),1.0,min(zoom+0.001,1.05))':"
+            f"x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':"
+            f"d={frames}:s={w}x{h}:fps={fps},"
+            f"vignette=angle='PI/3+sin(t*0.5)*0.1',"
+            f"format=yuv420p"
+        )
+
+    if etype == "light_sweep":
+        width = float(effect.get("width", 0.2))
+        intensity = float(effect.get("intensity", 0.3))
+        pos_expr = f"(T/{duration})*(1+{width*2}) - {width}"
+        mask_expr = f"max(0, 1 - abs(X/W - ({pos_expr}))/{width})"
+        lum_expr = f"min(255, p(X,Y) + 255*{intensity}*{mask_expr})"
+        return (
+            f"{base},"
+            f"geq=lum='{lum_expr}',"
+            f"fps={fps},format=yuv420p"
+        )
+
+    if etype == "focus_pull":
+        blur_start = int(effect.get("blur_start", 15))
+        blur_end = int(effect.get("blur_end", 0))
+        if blur_start > blur_end:
+            op_expr = f"T/{duration}"
+            bot, top = f"blurry_{idx}", f"sharp_{idx}"
+        else:
+            op_expr = f"T/{duration}"
+            bot, top = f"sharp_{idx}", f"blurry_{idx}"
+            
+        return (
+            f"{base},split=2[s_{idx}][b_{idx}];"
+            f"[b_{idx}]boxblur={max(blur_start, blur_end)}[blurry_{idx}];"
+            f"[s_{idx}]copy[sharp_{idx}];" 
+            f"[{bot}][{top}]blend=all_opacity='{op_expr}',"
+            f"fps={fps},format=yuv420p"
+        )
+
+    if etype == "rgb_split":
+        return f"{base},chromashift=cbh='5*sin(T*5)':crh='-5*sin(T*5)',fps={fps},format=yuv420p"
+
+    if etype == "film_grain":
+        return f"{base},noise=alls=8:allf=t+u,fps={fps},format=yuv420p"
+
+    if etype == "letterbox":
+        lb_h = int(h * 0.8)
+        return (
+            f"scale={w}:{lb_h}:force_original_aspect_ratio=increase,crop={w}:{lb_h},"
+            f"pad={w}:{h}:0:(oh-ih)/2:black,fps={fps},format=yuv420p"
+        )
+
+    if etype == "speed_ramp":
+        zs = 1.0
+        ze = float(effect.get("zoom_end", 1.15))
+        frames = max(1, int(round(duration * fps)))
+        ease_expr = "(on/d)*(on/d)*(3 - 2*(on/d))"
+        z_expr = f"{zs} + ({ze}-{zs})*{ease_expr}"
+        return (
+            f"{base},"
+            f"zoompan=z='{z_expr}':"
+            f"x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':"
+            f"d={frames}:s={w}x{h}:fps={fps},"
+            f"format=yuv420p"
+        )
+
     return f"{base},fps={fps},format=yuv420p"
+
 
 
 
@@ -262,7 +418,7 @@ def build_ffmpeg_command(cfg: Dict, base_dir: Path, out_path: Path) -> List[str]
 
 
 
-        vf = effect_filter(eff, w, h, fps, dur)
+        vf = effect_filter(eff, w, h, fps, dur, i)
 
 
 
@@ -285,51 +441,91 @@ def build_ffmpeg_command(cfg: Dict, base_dir: Path, out_path: Path) -> List[str]
 
 
     for i in range(0, len(labels) - 1):
-
         t = transitions[i] or {}
-
         ttype = t.get("type", "xfade")
 
-
-
         if ttype == "none":
-
+            td = 0.0
+            trans = "fade"
+        else:
+            td = float(t.get("duration", 0.5))
             trans = "fade"
 
-            td = 0.0
+        offset = max(0.0, current_len - td)
+        next_label = labels[i + 1]
+        out_label = f"x{i}"
+        
+        cur_mod = current
+        nxt_mod = next_label
 
-        else:
-
+        if ttype == "xfade":
+            trans = t.get("transition", "fade")
+        elif ttype == "slide":
+            direction = t.get("direction", "left")
+            trans = f"slide{direction}"
+        elif ttype == "wipe":
+            direction = t.get("direction", "left")
+            trans = f"wipe{direction}"
+        elif ttype == "zoom":
+            direction = t.get("direction", "in")
+            trans = f"zoom{direction}"
+        elif ttype == "fade_color":
+            color = t.get("color", "black")
+            trans = "fadewhite" if color == "white" else "fadeblack"
+        elif ttype == "blur_transition":
+            fc_parts.append(
+                f"[{current}]split=2[c1_{i}][c2_{i}];"
+                f"[c1_{i}]boxblur=15[cb_{i}];"
+                f"[c2_{i}][cb_{i}]blend=all_opacity='(t-{offset})/{td}':enable='between(t,{offset},{offset}+{td})'[cout_{i}]"
+            )
+            fc_parts.append(
+                f"[{next_label}]split=2[n1_{i}][n2_{i}];"
+                f"[n1_{i}]boxblur=15[nb_{i}];"
+                f"[n2_{i}][nb_{i}]blend=all_opacity='1-(t/{td})':enable='between(t,0,{td})'[nout_{i}]"
+            )
+            cur_mod = f"cout_{i}"
+            nxt_mod = f"nout_{i}"
+        elif ttype == "directional_blur":
+            direction = t.get("direction", "left")
+            trans = f"smooth{direction}"
+        elif ttype == "mask":
+            shape = t.get("shape", "radial")
+            if shape == "diagonal": trans = "diagbl"
+            elif shape == "gradient": trans = "distance"
+            else: trans = "radial"
+        elif ttype == "spin":
+            style = t.get("style", "rotate")
+            trans = style
+        elif ttype == "glitch":
+            fc_parts.append(
+                f"[{current}]chromashift=cbh='20*sin(t*10)':crh='-20*sin(t*10)':enable='between(t,{offset},{offset}+{td})'[cg_{i}]"
+            )
+            fc_parts.append(
+                f"[{next_label}]chromashift=cbh='20*sin(t*10)':crh='-20*sin(t*10)':enable='between(t,0,{td})'[ng_{i}]"
+            )
+            cur_mod = f"cg_{i}"
+            nxt_mod = f"ng_{i}"
+            trans = "pixelize"
+        elif ttype == "cross_zoom":
+            fc_parts.append(
+                f"[{current}]boxblur=10:enable='between(t,{offset},{offset}+{td})'[czc_{i}]"
+            )
+            fc_parts.append(
+                f"[{next_label}]boxblur=10:enable='between(t,0,{td})'[czn_{i}]"
+            )
+            cur_mod = f"czc_{i}"
+            nxt_mod = f"czn_{i}"
+            trans = "zoomin"
+        elif ttype != "none":
             trans = t.get("transition", "fade")
 
-            td = float(t.get("duration", 0.5))
-
-
-
-        offset = max(0.0, current_len - td)
-
-
-
-        next_label = labels[i + 1]
-
-        out_label = f"x{i}"
-
-
-
         fc_parts.append(
-
-            f"[{current}][{next_label}]"
-
+            f"[{cur_mod}][{nxt_mod}]"
             f"xfade=transition={trans}:duration={td}:offset={offset},"
-
             f"format=yuv420p[{out_label}]"
-
         )
 
-
-
         current_len = current_len + durations[i + 1] - td
-
         current = out_label
 
 
