@@ -167,75 +167,33 @@ def effect_filter(effect: Dict, w: int, h: int, fps: int, duration: float) -> st
 
 
     if etype == "slide_horizontal":
-
         direction = effect.get("direction", "left_to_center")
 
-        wide_w = int(w * 2)
-
-
-
-        if direction == "left_to_center":
-
-            x_expr = f"(t/{duration})*{w/2}"
-
-        elif direction == "right_to_center":
-
-            x_expr = f"{w}-(t/{duration})*{w/2}"
-
-        elif direction == "right_to_left":
-
-            x_expr = f"{w}-(t/{duration})*{w}"
-
-        else:
-
-            x_expr = f"(t/{duration})*{w}"
-
-
+        if direction in ("left_to_center", "left_to_right"):
+            mask_expr = f"clip(((T/{duration})*1.5 - X/W)*2, 0, 1)"
+        else: # "right_to_center", "right_to_left"
+            mask_expr = f"clip(((T/{duration})*1.5 - (1-X/W))*2, 0, 1)"
 
         return (
-
-            f"scale={wide_w}:{h}:force_original_aspect_ratio=increase,"
-
-            f"crop={w}:{h}:x='{x_expr}':y=0,"
-
+            f"{base},"
+            f"geq=lum='p(X,Y)*{mask_expr}':cb='(p(X,Y)-128)*{mask_expr}+128':cr='(p(X,Y)-128)*{mask_expr}+128',"
             f"fps={fps},format=yuv420p"
-
         )
 
 
 
     if etype == "slide_vertical":
-
         direction = effect.get("direction", "bottom_to_top")
 
-        tall_h = int(effect.get("source_scale_height", int(h * 1.25)))
-
-        delta = max(1, tall_h - h)
-
-
-
-        if direction == "bottom_to_top":
-
-            y_expr = f"{delta}-(t/{duration})*{delta}"
-
-        elif direction == "top_to_bottom":
-
-            y_expr = f"(t/{duration})*{delta}"
-
-        else:
-
-            y_expr = f"{delta}-(t/{duration})*{delta}"
-
-
+        if direction == "top_to_bottom":
+            mask_expr = f"clip(((T/{duration})*1.5 - Y/H)*2, 0, 1)"
+        else: # "bottom_to_top"
+            mask_expr = f"clip(((T/{duration})*1.5 - (1-Y/H))*2, 0, 1)"
 
         return (
-
-            f"scale={w}:{tall_h}:force_original_aspect_ratio=increase,"
-
-            f"crop={w}:{h}:x=0:y='{y_expr}',"
-
+            f"{base},"
+            f"geq=lum='p(X,Y)*{mask_expr}':cb='(p(X,Y)-128)*{mask_expr}+128':cr='(p(X,Y)-128)*{mask_expr}+128',"
             f"fps={fps},format=yuv420p"
-
         )
 
 
