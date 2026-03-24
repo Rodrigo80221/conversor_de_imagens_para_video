@@ -248,17 +248,17 @@ def effect_filter(effect: Dict, w: int, h: int, fps: int, duration: float, idx: 
         frames = max(1, int(round(duration * fps)))
         step = (ze - zs) / frames
         if direction == "left_to_right":
-            x_expr = "(1 - on/d)*(iw - iw/zoom)"
+            x_expr = f"(1 - on/{frames})*(iw - iw/zoom)"
             y_expr = "ih/2-(ih/zoom/2)"
         elif direction == "right_to_left":
-            x_expr = "(on/d)*(iw - iw/zoom)"
+            x_expr = f"(on/{frames})*(iw - iw/zoom)"
             y_expr = "ih/2-(ih/zoom/2)"
         elif direction == "top_to_bottom":
             x_expr = "iw/2-(iw/zoom/2)"
-            y_expr = "(on/d)*(ih - ih/zoom)"
+            y_expr = f"(on/{frames})*(ih - ih/zoom)"
         elif direction == "bottom_to_top":
             x_expr = "iw/2-(iw/zoom/2)"
-            y_expr = "(1 - on/d)*(ih - ih/zoom)"
+            y_expr = f"(1 - on/{frames})*(ih - ih/zoom)"
         else:
             x_expr = "iw/2-(iw/zoom/2)"
             y_expr = "ih/2-(ih/zoom/2)"
@@ -275,8 +275,8 @@ def effect_filter(effect: Dict, w: int, h: int, fps: int, duration: float, idx: 
         zs, ze = 1.0, 1.03
         frames = max(1, int(round(duration * fps)))
         step = (ze - zs) / frames
-        x_expr = "(iw/2-(iw/zoom/2)) + (on/d)*10"
-        y_expr = "(ih/2-(ih/zoom/2)) + (on/d)*5"
+        x_expr = f"(iw/2-(iw/zoom/2)) + (on/{frames})*10"
+        y_expr = f"(ih/2-(ih/zoom/2)) + (on/{frames})*5"
         return (
             f"{base},"
             f"zoompan=z='if(eq(on,0),{zs},min(zoom+{step},{ze}))':"
@@ -343,7 +343,7 @@ def effect_filter(effect: Dict, w: int, h: int, fps: int, duration: float, idx: 
         zs = 1.0
         ze = float(effect.get("zoom_end", 1.15))
         frames = max(1, int(round(duration * fps)))
-        ease_expr = "(on/d)*(on/d)*(3 - 2*(on/d))"
+        ease_expr = f"(on/{frames})*(on/{frames})*(3 - 2*(on/{frames}))"
         z_expr = f"{zs} + ({ze}-{zs})*{ease_expr}"
         return (
             f"{base},"
