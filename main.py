@@ -392,7 +392,8 @@ async def create_images_endpoint(
     token: str = Form(...),
     payload: str = Form(...),
     reference_url: Optional[str] = Form(None),
-    files: List[UploadFile] = File(None)
+    files: List[UploadFile] = File(None),
+    aspect_ratio: str = Form("9:16")
 ):
     temp_dir = tempfile.mkdtemp()
     
@@ -476,7 +477,10 @@ async def create_images_endpoint(
                 
                 # Construct Gemini Request
                 gemini_req = {
-                    "contents": [{"parts": parts}]
+                    "contents": [{"parts": parts}],
+                    "generationConfig": {
+                        "aspectRatio": aspect_ratio
+                    }
                 }
                 tasks.append({
                     "model": model_name,
@@ -486,6 +490,10 @@ async def create_images_endpoint(
         else:
             # Legacy / Direct Schema
             model_name = req_data.pop("model", "gemini-2.5-flash-image")
+            
+            if "generationConfig" not in req_data:
+                req_data["generationConfig"] = {}
+            req_data["generationConfig"]["aspectRatio"] = aspect_ratio
             
             # Helper to inject uploaded files if any
             if files: 
