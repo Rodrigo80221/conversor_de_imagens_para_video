@@ -479,7 +479,9 @@ async def create_images_endpoint(
                 gemini_req = {
                     "contents": [{"parts": parts}],
                     "generationConfig": {
-                        "aspectRatio": aspect_ratio
+                        "imageConfig": {
+                            "aspectRatio": aspect_ratio
+                        }
                     }
                 }
                 tasks.append({
@@ -493,7 +495,12 @@ async def create_images_endpoint(
             
             if "generationConfig" not in req_data:
                 req_data["generationConfig"] = {}
-            req_data["generationConfig"]["aspectRatio"] = aspect_ratio
+            if "aspectRatio" in req_data["generationConfig"]:
+                del req_data["generationConfig"]["aspectRatio"]
+                
+            if "imageConfig" not in req_data["generationConfig"]:
+                req_data["generationConfig"]["imageConfig"] = {}
+            req_data["generationConfig"]["imageConfig"]["aspectRatio"] = aspect_ratio
             
             # Helper to inject uploaded files if any
             if files: 
