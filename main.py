@@ -386,6 +386,26 @@ async def auto_subtitles_endpoint(
         return {"error": str(e)}
 
 
+# Models that belong to the Gemini 3 image family and require special handling:
+# - responseModalities must be set explicitly
+# - responses may include "thought" parts that should be skipped
+GEMINI3_IMAGE_MODELS = {
+    "gemini-3-pro-image-preview",
+    "gemini-3.1-flash-image-preview",
+}
+
+def is_gemini3_image_model(model_name: str) -> bool:
+    """Return True for any Gemini 3 image generation model."""
+    if not model_name:
+        return False
+    # Match exact IDs or future versioned variants (e.g. gemini-3.2-...)
+    name = model_name.strip().lower()
+    if name in {m.lower() for m in GEMINI3_IMAGE_MODELS}:
+        return True
+    # Catch any future gemini-3* image model
+    return name.startswith("gemini-3") and "image" in name
+
+
 @app.post("/create-images")
 async def create_images_endpoint(
     background_tasks: BackgroundTasks,
@@ -476,13 +496,18 @@ async def create_images_endpoint(
                         print(f"Warning: Failed to load actor ref for scene {scene_num}: {e}")
                 
                 # Construct Gemini Request
+                gen_cfg: dict = {
+                    "imageConfig": {
+                        "aspectRatio": aspect_ratio
+                    }
+                }
+                # Gemini 3 image models require responseModalities to be set
+                if is_gemini3_image_model(model_name):
+                    gen_cfg["responseModalities"] = ["IMAGE"]
+
                 gemini_req = {
                     "contents": [{"parts": parts}],
-                    "generationConfig": {
-                        "imageConfig": {
-                            "aspectRatio": aspect_ratio
-                        }
-                    }
+                    "generationConfig": gen_cfg
                 }
                 tasks.append({
                     "model": model_name,
@@ -501,6 +526,10 @@ async def create_images_endpoint(
             if "imageConfig" not in req_data["generationConfig"]:
                 req_data["generationConfig"]["imageConfig"] = {}
             req_data["generationConfig"]["imageConfig"]["aspectRatio"] = aspect_ratio
+
+            # Gemini 3 image models require responseModalities to be set explicitly
+            if is_gemini3_image_model(model_name):
+                req_data["generationConfig"].setdefault("responseModalities", ["IMAGE"])
             
             # Helper to inject uploaded files if any
             if files: 
@@ -554,11 +583,16 @@ async def create_images_endpoint(
                 continue
 
             # Extract Candidates (Images)
+            # Note: Gemini 3 image models return intermediate "thought" images
+            # (part["thought"] == True) before the final image — skip those.
             candidates = resp_json.get("candidates", [])
             found_image = False
             for i, cand in enumerate(candidates):
                 parts = cand.get("content", {}).get("parts", [])
                 for j, part in enumerate(parts):
+                    # Skip thought/reasoning parts produced by Gemini 3 models
+                    if part.get("thought") is True:
+                        continue
                     if "inline_data" in part or "inlineData" in part:
                         inline_data = part.get("inline_data") or part.get("inlineData")
                         b64_data = inline_data["data"]
