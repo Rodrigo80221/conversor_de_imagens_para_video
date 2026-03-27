@@ -567,19 +567,44 @@ async def create_images_endpoint(
         # Execute Requests
         image_count = 1
         for task in tasks:
-            url = f"https://generativelanguage.googleapis.com/v1beta/models/{task['model']}:generateContent?key={token}"
+            model = task['model']
+            url_no_key = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
+            url = f"{url_no_key}?key={token}"
+
+            print(f"[create-images] Calling model={model} | is_gemini3={is_gemini3_image_model(model)}")
+            print(f"[create-images] Request body: {json.dumps(task['body'], ensure_ascii=False)[:2000]}")
+
             response = requests.post(url, json=task['body'])
             
             resp_json = response.json() if response.status_code == 200 else {}
             
-            # Handle Error (Store as text file)
+            # Handle Error (Store as text file with full diagnostic info)
             if response.status_code != 200:
-                err_text = response.text
-                try: 
+                try:
                     err_json = response.json()
-                    err_text = err_json.get("error", {}).get("message", err_text)
-                except: pass
-                images_data.append((f"{task['filename']}_error.txt", err_text.encode('utf-8')))
+                    err_msg = err_json.get("error", {}).get("message", response.text)
+                except Exception:
+                    err_json = {}
+                    err_msg = response.text
+
+                print(f"[create-images] ERROR {response.status_code} for model={model}: {err_msg}")
+
+                # Build a detailed diagnostic text that will be saved in the ZIP
+                diag_lines = [
+                    f"=== Gemini API Error Diagnostic ===",
+                    f"Model         : {model}",
+                    f"URL           : {url_no_key}",
+                    f"HTTP Status   : {response.status_code}",
+                    f"Error Message : {err_msg}",
+                    f"",
+                    f"--- Full API Response ---",
+                    response.text,
+                    f"",
+                    f"--- Request Body Sent ---",
+                    json.dumps(task['body'], indent=2, ensure_ascii=False),
+                ]
+                diag_text = "\n".join(diag_lines)
+                images_data.append((f"{task['filename']}_error.txt", diag_text.encode('utf-8')))
                 continue
 
             # Extract Candidates (Images)
