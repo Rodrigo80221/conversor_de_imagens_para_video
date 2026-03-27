@@ -415,13 +415,17 @@ def normalize_model_name(model_name: str) -> str:
     """Normalize a user-supplied model name to its canonical Gemini API ID.
 
     Handles wrong casing, missing '-preview' suffix, and common abbreviations.
-    If the name is not in the alias map, it is returned lowercased so that at
-    least the casing issue is fixed.
+    If the name is unknown, falls back to 'gemini-3.1-flash-image-preview'.
     """
+    DEFAULT_MODEL = "gemini-3.1-flash-image-preview"
     if not model_name:
-        return model_name
+        return DEFAULT_MODEL
     key = model_name.strip().lower()
-    return MODEL_ALIASES.get(key, key)
+    if key in MODEL_ALIASES:
+        return MODEL_ALIASES[key]
+    # Unknown model — fall back to default and warn
+    print(f"[create-images] Unknown model '{model_name}', falling back to '{DEFAULT_MODEL}'")
+    return DEFAULT_MODEL
 
 def is_gemini3_image_model(model_name: str) -> bool:
     """Return True for any Gemini 3 image generation model."""
@@ -598,48 +602,94 @@ async def create_images_endpoint(
                 "filename": "generated.png" # Standard name
             })
 
+        import copy
+
+        def build_body_for_model(original_body: dict, model: str) -> dict:
+            """Return a copy of the request body adapted to the target model."""
+            body = copy.deepcopy(original_body)
+            if "generationConfig" not in body:
+                body["generationConfig"] = {}
+            gen_cfg = body["generationConfig"]
+            if "imageConfig" not in gen_cfg:
+                gen_cfg["imageConfig"] = {}
+
+            if is_gemini3_image_model(model):
+                gen_cfg.setdefault("responseModalities", ["IMAGE"])
+            else:
+                # Older models don't support responseModalities or imageSize
+                gen_cfg.pop("responseModalities", None)
+                gen_cfg["imageConfig"].pop("imageSize", None)
+            return body
+
+        def call_gemini(model: str, body: dict):
+            """Call the API. Returns (response, resp_json, err_msg)."""
+            adapted = build_body_for_model(body, model)
+            url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={token}"
+            print(f"[create-images] Calling model={model} | is_gemini3={is_gemini3_image_model(model)}")
+            print(f"[create-images] Request body: {json.dumps(adapted, ensure_ascii=False)[:2000]}")
+            resp = requests.post(url, json=adapted)
+            if resp.status_code == 200:
+                return resp, resp.json(), None
+            try:
+                err_msg = resp.json().get("error", {}).get("message", resp.text)
+            except Exception:
+                err_msg = resp.text
+            print(f"[create-images] ERROR {resp.status_code} for model={model}: {err_msg}")
+            return resp, {}, err_msg
+
+        def make_diag(model: str, resp, err_msg: str, body: dict) -> str:
+            url_no_key = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
+            return "\n".join([
+                "=== Gemini API Error Diagnostic ===",
+                f"Model         : {model}",
+                f"URL           : {url_no_key}",
+                f"HTTP Status   : {resp.status_code}",
+                f"Error Message : {err_msg}",
+                "",
+                "--- Full API Response ---",
+                resp.text,
+                "",
+                "--- Request Body Sent ---",
+                json.dumps(build_body_for_model(body, model), indent=2, ensure_ascii=False),
+            ])
+
+        # Fallback chain:
+        #   primary model  --(503)--> gemini-3.1-flash-image-preview
+        #                  --(any other error)--> gemini-2.5-flash-image
+        FALLBACK_ON_503   = "gemini-3.1-flash-image-preview"
+        FALLBACK_ON_ERROR = "gemini-2.5-flash-image"
+
         # Execute Requests
         image_count = 1
         for task in tasks:
-            model = task['model']
-            url_no_key = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
-            url = f"{url_no_key}?key={token}"
+            filename      = task['filename']
+            original_body = task['body']
 
-            print(f"[create-images] Calling model={model} | is_gemini3={is_gemini3_image_model(model)}")
-            print(f"[create-images] Request body: {json.dumps(task['body'], ensure_ascii=False)[:2000]}")
+            # --- Attempt 1: primary model ---
+            resp, resp_json, err_msg = call_gemini(task['model'], original_body)
 
-            response = requests.post(url, json=task['body'])
-            
-            resp_json = response.json() if response.status_code == 200 else {}
-            
-            # Handle Error (Store as text file with full diagnostic info)
-            if response.status_code != 200:
-                try:
-                    err_json = response.json()
-                    err_msg = err_json.get("error", {}).get("message", response.text)
-                except Exception:
-                    err_json = {}
-                    err_msg = response.text
+            if err_msg is not None:
+                fallback = FALLBACK_ON_503 if resp.status_code == 503 else FALLBACK_ON_ERROR
+                print(f"[create-images] Retrying with fallback model={fallback}")
 
-                print(f"[create-images] ERROR {response.status_code} for model={model}: {err_msg}")
+                # --- Attempt 2: first fallback ---
+                resp2, resp_json2, err_msg2 = call_gemini(fallback, original_body)
 
-                # Build a detailed diagnostic text that will be saved in the ZIP
-                diag_lines = [
-                    f"=== Gemini API Error Diagnostic ===",
-                    f"Model         : {model}",
-                    f"URL           : {url_no_key}",
-                    f"HTTP Status   : {response.status_code}",
-                    f"Error Message : {err_msg}",
-                    f"",
-                    f"--- Full API Response ---",
-                    response.text,
-                    f"",
-                    f"--- Request Body Sent ---",
-                    json.dumps(task['body'], indent=2, ensure_ascii=False),
-                ]
-                diag_text = "\n".join(diag_lines)
-                images_data.append((f"{task['filename']}_error.txt", diag_text.encode('utf-8')))
-                continue
+                if err_msg2 is not None and fallback != FALLBACK_ON_ERROR:
+                    # --- Attempt 3: last-resort fallback ---
+                    print(f"[create-images] Retrying with last-resort model={FALLBACK_ON_ERROR}")
+                    resp3, resp_json3, err_msg3 = call_gemini(FALLBACK_ON_ERROR, original_body)
+                    if err_msg3 is not None:
+                        diag = make_diag(FALLBACK_ON_ERROR, resp3, err_msg3, original_body)
+                        images_data.append((f"{filename}_error.txt", diag.encode('utf-8')))
+                        continue
+                    resp_json = resp_json3
+                elif err_msg2 is not None:
+                    diag = make_diag(fallback, resp2, err_msg2, original_body)
+                    images_data.append((f"{filename}_error.txt", diag.encode('utf-8')))
+                    continue
+                else:
+                    resp_json = resp_json2
 
             # Extract Candidates (Images)
             # Note: Gemini 3 image models return intermediate "thought" images
@@ -658,16 +708,13 @@ async def create_images_endpoint(
                         mime = inline_data.get("mime_type") or inline_data.get("mimeType") or "image/png"
                         ext = mime.split("/")[-1] if "/" in mime else "png"
                         img_bytes = base64.b64decode(b64_data)
-                        
                         final_fname = f"image_{image_count}.{ext}"
                         image_count += 1
-                        
                         images_data.append((final_fname, img_bytes))
                         found_image = True
-            
+
             if not found_image:
-                 # Save full JSON response for debugging
-                 images_data.append((f"{task['filename']}_response.json", json.dumps(resp_json, indent=2).encode('utf-8')))
+                images_data.append((f"{filename}_response.json", json.dumps(resp_json, indent=2).encode('utf-8')))
 
         # Zip Creation
         zip_path = os.path.join(temp_dir, "images.zip")
