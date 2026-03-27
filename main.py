@@ -394,11 +394,39 @@ GEMINI3_IMAGE_MODELS = {
     "gemini-3.1-flash-image-preview",
 }
 
+# Alias map: normalizes any user-supplied variant to the canonical API model ID.
+# Keys are lowercase; values are the exact string the Gemini API expects.
+MODEL_ALIASES: dict[str, str] = {
+    # gemini-3-pro-image-preview aliases
+    "gemini-3-pro-image-preview":   "gemini-3-pro-image-preview",
+    "gemini-3-pro-image":           "gemini-3-pro-image-preview",
+    "gemini-3-pro":                 "gemini-3-pro-image-preview",
+    "gemini3proimagepreview":       "gemini-3-pro-image-preview",
+    # gemini-3.1-flash-image-preview aliases
+    "gemini-3.1-flash-image-preview":  "gemini-3.1-flash-image-preview",
+    "gemini-3.1-flash-image":          "gemini-3.1-flash-image-preview",
+    "gemini-3.1-flash":                "gemini-3.1-flash-image-preview",
+    # gemini-2.5-flash-image aliases (existing model, keep as-is)
+    "gemini-2.5-flash-image":       "gemini-2.5-flash-image",
+    "gemini-2.5-flash":             "gemini-2.5-flash-image",
+}
+
+def normalize_model_name(model_name: str) -> str:
+    """Normalize a user-supplied model name to its canonical Gemini API ID.
+
+    Handles wrong casing, missing '-preview' suffix, and common abbreviations.
+    If the name is not in the alias map, it is returned lowercased so that at
+    least the casing issue is fixed.
+    """
+    if not model_name:
+        return model_name
+    key = model_name.strip().lower()
+    return MODEL_ALIASES.get(key, key)
+
 def is_gemini3_image_model(model_name: str) -> bool:
     """Return True for any Gemini 3 image generation model."""
     if not model_name:
         return False
-    # Match exact IDs or future versioned variants (e.g. gemini-3.2-...)
     name = model_name.strip().lower()
     if name in {m.lower() for m in GEMINI3_IMAGE_MODELS}:
         return True
@@ -470,7 +498,10 @@ async def create_images_endpoint(
             # Plan Schema
             scenes = req_data["structure"]["scenes"]
             for scene in scenes:
-                model_name = scene.get("generation_technology", "gemini-2.5-flash-image")
+                raw_model = scene.get("generation_technology", "gemini-2.5-flash-image")
+                model_name = normalize_model_name(raw_model)
+                if model_name != raw_model:
+                    print(f"[create-images] Model name normalized: '{raw_model}' -> '{model_name}'")
                 prompt = scene.get("scene_image_description", "")
                 scene_num = scene.get("scene_number", "0")
                 
@@ -516,7 +547,10 @@ async def create_images_endpoint(
                 })
         else:
             # Legacy / Direct Schema
-            model_name = req_data.pop("model", "gemini-2.5-flash-image")
+            raw_model = req_data.pop("model", "gemini-2.5-flash-image")
+            model_name = normalize_model_name(raw_model)
+            if model_name != raw_model:
+                print(f"[create-images] Model name normalized: '{raw_model}' -> '{model_name}'")
             
             if "generationConfig" not in req_data:
                 req_data["generationConfig"] = {}
