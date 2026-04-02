@@ -327,7 +327,7 @@ def effect_filter(effect: Dict, w: int, h: int, fps: int, duration: float, idx: 
         )
 
     if etype == "rgb_split":
-        return f"{base},chromashift=cbh='5*sin(t*5)':crh='-5*sin(t*5)',fps={fps},format=yuv420p"
+        return f"{base},chromashift=cbh=5:crh=-5,fps={fps},format=yuv420p"
 
     if etype == "film_grain":
         return f"{base},noise=alls=8:allf=t+u,fps={fps},format=yuv420p"
@@ -476,12 +476,12 @@ def build_ffmpeg_command(cfg: Dict, base_dir: Path, out_path: Path) -> List[str]
             fc_parts.append(
                 f"[{current}]split=2[c1_{i}][c2_{i}];"
                 f"[c1_{i}]boxblur=15[cb_{i}];"
-                f"[c2_{i}][cb_{i}]blend=all_opacity='(t-{offset})/{td}':enable='between(t,{offset},{offset}+{td})'[cout_{i}]"
+                f"[c2_{i}][cb_{i}]blend=all_expr='A*(1-(T-{offset})/{td}) + B*((T-{offset})/{td})':enable='between(t,{offset},{offset}+{td})'[cout_{i}]"
             )
             fc_parts.append(
                 f"[{next_label}]split=2[n1_{i}][n2_{i}];"
                 f"[n1_{i}]boxblur=15[nb_{i}];"
-                f"[n2_{i}][nb_{i}]blend=all_opacity='1-(t/{td})':enable='between(t,0,{td})'[nout_{i}]"
+                f"[n2_{i}][nb_{i}]blend=all_expr='A*(T/{td}) + B*(1-(T/{td}))':enable='between(t,0,{td})'[nout_{i}]"
             )
             cur_mod = f"cout_{i}"
             nxt_mod = f"nout_{i}"
@@ -498,10 +498,10 @@ def build_ffmpeg_command(cfg: Dict, base_dir: Path, out_path: Path) -> List[str]
             trans = style
         elif ttype == "glitch":
             fc_parts.append(
-                f"[{current}]chromashift=cbh='20*sin(t*10)':crh='-20*sin(t*10)':enable='between(t,{offset},{offset}+{td})'[cg_{i}]"
+                f"[{current}]chromashift=cbh=15:crh=-15:enable='between(t,{offset},{offset}+{td})'[cg_{i}]"
             )
             fc_parts.append(
-                f"[{next_label}]chromashift=cbh='20*sin(t*10)':crh='-20*sin(t*10)':enable='between(t,0,{td})'[ng_{i}]"
+                f"[{next_label}]chromashift=cbh=15:crh=-15:enable='between(t,0,{td})'[ng_{i}]"
             )
             cur_mod = f"cg_{i}"
             nxt_mod = f"ng_{i}"
