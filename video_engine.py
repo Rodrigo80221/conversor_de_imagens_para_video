@@ -445,7 +445,7 @@ def build_ffmpeg_command(cfg: Dict, base_dir: Path, out_path: Path) -> List[str]
         ttype = t.get("type", "xfade")
 
         if ttype == "none":
-            td = 0.0
+            td = 0.05
             trans = "fade"
         else:
             td = float(t.get("duration", 0.5))
