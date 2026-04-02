@@ -312,10 +312,10 @@ def effect_filter(effect: Dict, w: int, h: int, fps: int, duration: float, idx: 
         blur_start = int(effect.get("blur_start", 15))
         blur_end = int(effect.get("blur_end", 0))
         if blur_start > blur_end:
-            op_expr = f"T/{duration}"
+            op_expr = f"t/{duration}"
             bot, top = f"blurry_{idx}", f"sharp_{idx}"
         else:
-            op_expr = f"T/{duration}"
+            op_expr = f"t/{duration}"
             bot, top = f"sharp_{idx}", f"blurry_{idx}"
             
         return (
@@ -327,7 +327,7 @@ def effect_filter(effect: Dict, w: int, h: int, fps: int, duration: float, idx: 
         )
 
     if etype == "rgb_split":
-        return f"{base},chromashift=cbh='5*sin(T*5)':crh='-5*sin(T*5)',fps={fps},format=yuv420p"
+        return f"{base},chromashift=cbh='5*sin(t*5)':crh='-5*sin(t*5)',fps={fps},format=yuv420p"
 
     if etype == "film_grain":
         return f"{base},noise=alls=8:allf=t+u,fps={fps},format=yuv420p"
