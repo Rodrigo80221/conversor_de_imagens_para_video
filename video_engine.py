@@ -757,45 +757,31 @@ def merge_video_audio(
         
 
         # Áudio
-
         audio_mix_parts = []
-
         
-
         if narr_idx != -1:
-
-            fc.append(f"[{narr_idx}:a]volume={vol_narration}[a_narr]")
-
+            # apad ensures narration stream doesn't end before the background or total_duration,
+            # preventing volume jumps or amix dropouts.
+            fc.append(f"[{narr_idx}:a]volume={vol_narration},apad[a_narr]")
             audio_mix_parts.append("[a_narr]")
-
             
-
         if bg_idx != -1:
-
             fc.append(f"[{bg_idx}:a]volume={vol_background}[a_bg]")
-
             audio_mix_parts.append("[a_bg]")
-
             
-
         # Mixagem
-
         if len(audio_mix_parts) == 2:
-
-             fc.append(f"{''.join(audio_mix_parts)}amix=inputs=2:dropout_transition=2[a_mix]")
-
+             # Remove dropout_transition as it is deprecated in newer FFmpeg and causes errors.
+             # Since a_narr has apad and a_bg has stream_loop -1, both are infinite,
+             # so no dropouts will happen anyway.
+             # We also add weights to prevent default 1/N volume reduction which makes audio quiet.
+             fc.append(f"{''.join(audio_mix_parts)}amix=inputs=2:duration=longest:weights=1 1[a_mix]")
              fc.append(f"[a_mix]afade=t=out:st={start_fade}:d={fade_duration}[a_final]")
-
         elif len(audio_mix_parts) == 1:
-
              # Só um audio, aplica fade direto
-
              fc.append(f"{audio_mix_parts[0]}afade=t=out:st={start_fade}:d={fade_duration}[a_final]")
-
         else:
-
              # Sem audio? (Não deve cair aqui pelo if inicial)
-
              pass
 
 
