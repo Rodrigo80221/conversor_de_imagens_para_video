@@ -766,7 +766,9 @@ def merge_video_audio(
             audio_mix_parts.append("[a_narr]")
             
         if bg_idx != -1:
-            fc.append(f"[{bg_idx}:a]volume={vol_background}[a_bg]")
+            # asetpts=N/SR/TB completely rewrites the timestamp cleanly so that 
+            # when -stream_loop loops back to 0, amix doesn't drop the background audio!
+            fc.append(f"[{bg_idx}:a]volume={vol_background},asetpts=N/SR/TB[a_bg]")
             audio_mix_parts.append("[a_bg]")
             
         # Mixagem
@@ -774,8 +776,8 @@ def merge_video_audio(
              # Remove dropout_transition as it is deprecated in newer FFmpeg and causes errors.
              # Since a_narr has apad and a_bg has stream_loop -1, both are infinite,
              # so no dropouts will happen anyway.
-             # We also add weights to prevent default 1/N volume reduction which makes audio quiet.
-             fc.append(f"{''.join(audio_mix_parts)}amix=inputs=2:duration=longest:weights=1 1[a_mix]")
+             # Using normalize=0 ensures both streams play at the actual volume we requested.
+             fc.append(f"{''.join(audio_mix_parts)}amix=inputs=2:duration=longest:normalize=0[a_mix]")
              fc.append(f"[a_mix]afade=t=out:st={start_fade}:d={fade_duration}[a_final]")
         elif len(audio_mix_parts) == 1:
              # Só um audio, aplica fade direto
