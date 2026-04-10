@@ -945,13 +945,14 @@ async def batch_html_to_image_endpoint(
     temp_dir = tempfile.mkdtemp()
     try:
         images_data = []
+        image_counter = 1
         
         for idx, img_data in enumerate(request.Images):
             # O default é não criar a primeira imagem (idx == 0)
             if idx == 0 and not request.create_first_image:
                 continue
                 
-            output_filename = f"image_{idx + 1}.png"
+            output_filename = f"image_{image_counter}.png"
             output_path = os.path.join(temp_dir, output_filename)
             
             await run_in_threadpool(
@@ -965,9 +966,11 @@ async def batch_html_to_image_endpoint(
             
             if os.path.exists(output_path):
                 images_data.append((output_filename, output_path))
+                image_counter += 1
             else:
                 shutil.rmtree(temp_dir)
                 return {"error": f"Failed to generate {output_filename}"}
+
                 
         # Criação do arquivo zip contendo todas as imagens
         zip_filename = "batch_images.zip"
