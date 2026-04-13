@@ -51,6 +51,7 @@ class HtmlImageEngine:
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;800&display=swap" rel="stylesheet">
   <style>
+    {css}
     html, body {{
       width: {width}px;
       height: {height}px;
@@ -59,7 +60,6 @@ class HtmlImageEngine:
       overflow: hidden;
       background: transparent;
     }}
-    {css}
   </style>
 </head>
 <body>
