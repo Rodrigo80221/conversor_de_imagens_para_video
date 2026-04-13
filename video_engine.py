@@ -570,15 +570,21 @@ def generate_video_from_config(cfg: Dict, base_dir: Path, output_file: Path):
 
 
 
-def get_wav_duration(filename: str) -> float:
-
-    with contextlib.closing(wave.open(filename, 'r')) as f:
-
-        frames = f.getnframes()
-
-        rate = f.getframerate()
-
-        return frames / float(rate)
+def get_audio_duration(filename: str) -> float:
+    cmd = [
+        "ffprobe", "-v", "error", "-show_entries",
+        "format=duration", "-of",
+        "default=noprint_wrappers=1:nokey=1", filename
+    ]
+    try:
+        result = subprocess.run(cmd, check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+        return float(result.stdout.strip())
+    except Exception as e:
+        # Fallback to wave if ffprobe fails for some reason
+        with contextlib.closing(wave.open(filename, 'r')) as f:
+            frames = f.getnframes()
+            rate = f.getframerate()
+            return frames / float(rate)
 
 
 
@@ -666,7 +672,7 @@ def merge_video_audio(
 
     if narration_input:
 
-        narr_duration = get_wav_duration(str(narration_input))
+        narr_duration = get_audio_duration(str(narration_input))
 
         
 
