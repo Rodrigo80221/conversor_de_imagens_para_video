@@ -991,5 +991,57 @@ async def batch_html_to_image_endpoint(
         shutil.rmtree(temp_dir)
         return {"error": str(e)}
 
+@app.post("/generate-elevenlabs-narration")
+async def generate_elevenlabs_narration(
+    background_tasks: BackgroundTasks,
+    text: str = Form(...),
+    api_key: str = Form(...),
+    voice_id: str = Form("21m00Tcm4TlvDq8ikWAM"), # Default is Rachel
+    model_id: str = Form("eleven_multilingual_v2"),
+    stability: float = Form(0.5),
+    similarity_boost: float = Form(0.75)
+):
+    temp_dir = tempfile.mkdtemp()
+    try:
+        output_filename = "narration.mp3"
+        output_path = os.path.join(temp_dir, output_filename)
+        
+        url = f"https://api.elevenlabs.io/v1/text-to-speech/{voice_id}"
+        headers = {
+            "xi-api-key": api_key,
+            "Content-Type": "application/json"
+        }
+        payload = {
+            "text": text,
+            "model_id": model_id,
+            "voice_settings": {
+                "stability": stability,
+                "similarity_boost": similarity_boost
+            }
+        }
+        
+        response = requests.post(url, headers=headers, json=payload)
+        
+        if response.status_code == 200:
+            with open(output_path, "wb") as f:
+                f.write(response.content)
+                
+            background_tasks.add_task(cleanup_temp_dir, temp_dir)
+            return FileResponse(
+                output_path,
+                media_type="audio/mpeg",
+                filename="elevenlabs_narration.mp3"
+            )
+        else:
+            shutil.rmtree(temp_dir)
+            return {
+                "error": f"ElevenLabs API failed with status {response.status_code}",
+                "details": response.text
+            }
+            
+    except Exception as e:
+        shutil.rmtree(temp_dir)
+        return {"error": str(e)}
+
 if __name__ == "__main__":
     uvicorn.run(app, host="0.0.0.0", port=80)
