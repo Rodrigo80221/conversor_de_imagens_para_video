@@ -321,8 +321,8 @@ def effect_filter(effect: Dict, w: int, h: int, fps: int, duration: float, idx: 
         return (
             f"{base},split=2[s_{idx}][b_{idx}];"
             f"[b_{idx}]boxblur={max(blur_start, blur_end)}[blurry_{idx}];"
-            f"[s_{idx}]copy[sharp_{idx}];" 
-            f"[{bot}][{top}]blend=all_opacity='{op_expr}',"
+            f"[s_{idx}]copy[sharp_{idx}];"
+            f"[{bot}][{top}]blend=all_expr='A*({op_expr})+B*(1-({op_expr}))',"
             f"fps={fps},format=yuv420p"
         )
 
