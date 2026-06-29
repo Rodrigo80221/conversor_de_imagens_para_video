@@ -354,7 +354,8 @@ async def add_subtitles_endpoint(
 async def auto_subtitles_endpoint(
     background_tasks: BackgroundTasks,
     file: UploadFile = File(...),
-    words_per_line: int = Form(5)
+    words_per_line: int = Form(5),
+    model_size: str = Form("base")
 ):
     temp_dir = tempfile.mkdtemp()
     try:
@@ -371,7 +372,8 @@ async def auto_subtitles_endpoint(
                 video_engine.generate_subtitles,
                 audio_path=Path(input_path),
                 output_srt_path=None, # Don't need file output
-                words_per_line=words_per_line
+                words_per_line=words_per_line,
+                model_size=model_size
             )
         except Exception as e:
             raise RuntimeError(f"Subtitle generation failed: {e}")
