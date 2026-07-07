@@ -29,51 +29,36 @@ COMMON_EXTS = [".png", ".jpg", ".jpeg", ".webp"]
 
 
 def find_image_file(item: Dict, base_dir: Path) -> Path:
-
     if "image_file" in item and item["image_file"]:
-
         p = base_dir / item["image_file"]
-
         if p.exists():
-
             return p
+            
+        base_name = Path(item["image_file"]).stem
+        for ext in COMMON_EXTS:
+            p_ext = base_dir / f"{base_name}{ext}"
+            if p_ext.exists():
+                return p_ext
 
         raise FileNotFoundError(f"image_file não encontrado: {p}")
 
-
-
     img_id = item.get("id", "")
-
     if not img_id:
-
         raise ValueError("Item sem 'id'.")
 
-
-
     p = base_dir / img_id
-
     if p.exists():
-
         return p
-
-
-
+        
+    img_id_base = Path(img_id).stem
     for ext in COMMON_EXTS:
-
-        p = base_dir / f"{img_id}{ext}"
-
-        if p.exists():
-
-            return p
-
-
+        p_ext = base_dir / f"{img_id_base}{ext}"
+        if p_ext.exists():
+            return p_ext
 
     raise FileNotFoundError(
-
         f"Não encontrei arquivo para '{img_id}'. "
-
         f"Nomeie como img01.png/.jpg etc, ou use 'image_file' no JSON."
-
     )
 
 
