@@ -494,6 +494,7 @@ async def create_images_endpoint(
     try:
         req_data = json.loads(payload)
         images_data = []
+        generation_log = ["=== Relatório de Geração de Imagens ==="]
         
         # Determine if this is the "Visual Strategy" video plan schema
         is_video_plan = "structure" in req_data and "scenes" in req_data["structure"]
@@ -549,7 +550,8 @@ async def create_images_endpoint(
                 tasks.append({
                     "model": model_name,
                     "body": gemini_req,
-                    "filename": f"scene_{scene_num}.png"
+                    "filename": f"scene_{scene_num}.png",
+                    "used_reference": bool(scene.get("actor_ref") and reference_url)
                 })
         else:
             # Legacy / Direct Schema
@@ -601,7 +603,8 @@ async def create_images_endpoint(
             tasks.append({
                 "model": model_name,
                 "body": req_data,
-                "filename": "generated.png" # Standard name
+                "filename": "generated.png", # Standard name
+                "used_reference": bool(files)
             })
 
         import copy
@@ -666,9 +669,12 @@ async def create_images_endpoint(
         for task in tasks:
             filename      = task['filename']
             original_body = task['body']
+            target_model  = task['model']
+            used_ref      = task.get('used_reference', False)
+            final_model   = target_model
 
             # --- Attempt 1: primary model ---
-            resp, resp_json, err_msg = call_gemini(task['model'], original_body)
+            resp, resp_json, err_msg = call_gemini(target_model, original_body)
 
             if err_msg is not None:
                 fallback = FALLBACK_ON_503 if resp.status_code == 503 else FALLBACK_ON_ERROR
@@ -676,11 +682,13 @@ async def create_images_endpoint(
 
                 # --- Attempt 2: first fallback ---
                 resp2, resp_json2, err_msg2 = call_gemini(fallback, original_body)
+                final_model = fallback
 
                 if err_msg2 is not None and fallback != FALLBACK_ON_ERROR:
                     # --- Attempt 3: last-resort fallback ---
                     print(f"[create-images] Retrying with last-resort model={FALLBACK_ON_ERROR}")
                     resp3, resp_json3, err_msg3 = call_gemini(FALLBACK_ON_ERROR, original_body)
+                    final_model = FALLBACK_ON_ERROR
                     if err_msg3 is not None:
                         diag = make_diag(FALLBACK_ON_ERROR, resp3, err_msg3, original_body)
                         images_data.append((f"{filename}_error.txt", diag.encode('utf-8')))
@@ -718,6 +726,25 @@ async def create_images_endpoint(
             if not found_image:
                 images_data.append((f"{filename}_response.json", json.dumps(resp_json, indent=2).encode('utf-8')))
 
+            # Add to generation log
+            usage = resp_json.get("usageMetadata", {})
+            prompt_tokens = usage.get("promptTokenCount", "N/A")
+            candidate_tokens = usage.get("candidatesTokenCount", "N/A")
+            total_tokens = usage.get("totalTokenCount", "N/A")
+            
+            log_entry = (
+                f"Arquivo alvo: {filename}\n"
+                f"Modelo solicitado: {target_model}\n"
+                f"Modelo utilizado: {final_model}\n"
+                f"Usou imagem de referência? {'Sim' if used_ref else 'Não'}\n"
+                f"Tokens Prompt: {prompt_tokens} | Tokens Candidato: {candidate_tokens} | Tokens Total: {total_tokens}"
+            )
+            generation_log.append(log_entry)
+
+        # Add generation log to zip
+        log_text = "\n\n".join(generation_log)
+        images_data.append(("generation_log.txt", log_text.encode('utf-8')))
+
         # Zip Creation
         zip_path = os.path.join(temp_dir, "images.zip")
         with zipfile.ZipFile(zip_path, 'w') as zf:
@@ -725,7 +752,17 @@ async def create_images_endpoint(
                 zf.writestr(fname, data)
                 
         background_tasks.add_task(cleanup_temp_dir, temp_dir)
-        return FileResponse(zip_path, media_type="application/zip", filename="generated_images.zip")
+        
+        # Enviar o log também via cabeçalho HTTP codificado em Base64
+        log_b64 = base64.b64encode(log_text.encode('utf-8')).decode('utf-8')
+        headers = {"X-Generation-Log-Base64": log_b64}
+
+        return FileResponse(
+            zip_path, 
+            media_type="application/zip", 
+            filename="generated_images.zip",
+            headers=headers
+        )
 
     except Exception as e:
         shutil.rmtree(temp_dir)
