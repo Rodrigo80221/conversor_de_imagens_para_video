@@ -9,6 +9,7 @@ RUN apt-get update && \
       fonts-dejavu-core \
       fonts-liberation \
       fonts-noto-color-emoji \
+      curl \
       libnss3 \
       libatk-bridge2.0-0 \
       libatk1.0-0 \
@@ -25,6 +26,13 @@ RUN apt-get update && \
       libgtk-3-0 \
       ca-certificates \
     && rm -rf /var/lib/apt/lists/*
+
+# Baixar e instalar fontes personalizadas
+RUN mkdir -p /usr/share/fonts/truetype/custom && \
+    curl -L "https://github.com/google/fonts/raw/main/ofl/poppins/Poppins-SemiBold.ttf" -o /usr/share/fonts/truetype/custom/Poppins-SemiBold.ttf && \
+    curl -L "https://github.com/google/fonts/raw/main/ofl/montserrat/Montserrat-SemiBold.ttf" -o /usr/share/fonts/truetype/custom/Montserrat-SemiBold.ttf && \
+    curl -L "https://github.com/google/fonts/raw/main/ofl/inter/static/Inter-Bold.ttf" -o /usr/share/fonts/truetype/custom/Inter-Bold.ttf && \
+    fc-cache -fv
 
 # 👇 ADICIONE ESTA LINHA
 ENV CHROME_BIN=/usr/bin/chromium

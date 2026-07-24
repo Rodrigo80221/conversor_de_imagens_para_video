@@ -991,29 +991,63 @@ def get_video_dimensions(video_path: Path):
 
 
 
-def color_to_ass(hex_color: str) -> str:
-
+def color_to_ass(hex_color: str, opacity: int = 100) -> str:
     """
-
-    Converte HEX padrão (#RRGGBB) para o formato ASS (&HBBGGRR).
-
-    Sem isso, as cores personalizadas não funcionam no FFmpeg.
-
+    Converte HEX padrão (#RRGGBB) para o formato ASS (&HAABBGGRR).
+    opacity: 0-100 (%), onde 100 = totalmente opaco, 0 = totalmente transparente.
+    No formato ASS, o canal Alpha vai de 00 (opaco) a FF (transparente).
     """
-
     hex_color = hex_color.lstrip("#")
 
     if len(hex_color) != 6:
+        return "&H00FFFFFF"  # Branco opaco padrão se der erro
 
-        return "&HFFFFFF" # Branco padrão se der erro
-
-    
+    # Converte opacity (0-100%) para alpha ASS (00-FF invertido)
+    opacity = max(0, min(100, opacity))
+    alpha = int((100 - opacity) * 255 / 100)
+    alpha_hex = format(alpha, '02X')
 
     # ASS usa BGR ao invés de RGB
-
     r, g, b = hex_color[:2], hex_color[2:4], hex_color[4:]
 
-    return f"&H{b}{g}{r}"
+    return f"&H{alpha_hex}{b}{g}{r}"
+
+
+def process_highlight_tags(srt_text: str, highlight_color: str, font_color: str, font_opacity: int = 100) -> str:
+    """
+    Converte tags <highlight>...</highlight> no texto SRT para formatação ASS inline.
+    - Troca <highlight> pela tag de cor ASS para o highlight_color.
+    - Troca </highlight> de volta para a cor primária (font_color).
+    - Se as tags forem inválidas ou incompletas, remove-as silenciosamente.
+    - Permite múltiplos destaques na mesma linha.
+    """
+    try:
+        # Converte as cores para o formato ASS
+        h_color_ass = color_to_ass(highlight_color, 100)
+        p_color_ass = color_to_ass(font_color, font_opacity)
+
+        # Substitui a tag de abertura pela tag de cor ASS
+        result = re.sub(
+            r'<highlight>',
+            lambda m: f'{{\\c{h_color_ass}}}',
+            srt_text
+        )
+        # Substitui a tag de fechamento pelo retorno à cor primária
+        result = re.sub(
+            r'</highlight>',
+            lambda m: f'{{\\c{p_color_ass}}}',
+            result
+        )
+        # Remove qualquer tag malformada restante (ex: <highlight sem fechamento)
+        result = re.sub(r'</?highlight[^>]*>', '', result)
+        return result
+    except Exception as e:
+        # Em caso de falha, remove as tags silenciosamente
+        print(f"Warning: Error processing highlight tags: {e}")
+        try:
+            return re.sub(r'</?highlight[^>]*>', '', srt_text)
+        except Exception:
+            return srt_text
 
 
 
@@ -1318,24 +1352,55 @@ def enforce_subtitle_pause(srt_path: Path, pause_ms: int):
         for block in new_blocks:
             f.write(block + "\n\n")
 
+# Valores padrão para as configurações visuais de legendas
+_SUBTITLE_DEFAULTS = {
+    "font_family":    "Poppins",
+    "font_weight":    600,
+    "border_width":   2,
+    "font_opacity":   100,
+    "shadow_enabled": True,
+    "shadow_opacity": 55,
+    "shadow_depth":   4,
+    "highlight_color": "#FFD633",
+}
+
+
+def _resolve_subtitle_param(value, key: str, cast_type=None):
+    """
+    Retorna value se for válido, caso contrário retorna o default.
+    Aceita None, string vazia ou tipo incorreto como "inválido".
+    """
+    default = _SUBTITLE_DEFAULTS[key]
+    if value is None:
+        return default
+    if cast_type is not None:
+        try:
+            return cast_type(value)
+        except (ValueError, TypeError):
+            return default
+    if isinstance(value, str) and value.strip() == "":
+        return default
+    return value
+
+
 def add_subtitles(
-
     video_input: Path,
-
     srt_input: Path,
-
     output_file: Path,
-
-    position_y: int = 0, # 0 = Base absoluta, + = Sobe em direção ao topo
-
+    position_y: int = 0,           # 0 = Base absoluta, + = Sobe em direção ao topo
     font_color: str = "#FFFFFF",
-
     outline_color: str = "#000000",
-
     font_size: int = 24,
-
-    max_lines: Optional[int] = None
-
+    max_lines: Optional[int] = None,
+    # Novos parâmetros visuais (todos opcionais com fallback para defaults)
+    font_family: Optional[str] = None,
+    font_weight: Optional[int] = None,
+    border_width: Optional[int] = None,
+    font_opacity: Optional[int] = None,
+    shadow_enabled: Optional[bool] = None,
+    shadow_opacity: Optional[int] = None,
+    shadow_depth: Optional[int] = None,
+    highlight_color: Optional[str] = None,
 ):
 
     
@@ -1379,45 +1444,51 @@ def add_subtitles(
 
 
     # Process SRT to enforce max_lines if requested
-
     if max_lines is not None and max_lines > 0:
-
         process_srt_limit_lines(srt_input, max_lines, max_chars=max_chars)
 
-    
+    # Resolve parâmetros visuais com fallback para defaults
+    r_font_family   = _resolve_subtitle_param(font_family,   "font_family")
+    r_font_weight   = _resolve_subtitle_param(font_weight,   "font_weight",   int)
+    r_border_width  = _resolve_subtitle_param(border_width,  "border_width",  int)
+    r_font_opacity  = _resolve_subtitle_param(font_opacity,  "font_opacity",  int)
+    r_shadow_enabled= _resolve_subtitle_param(shadow_enabled,"shadow_enabled")
+    r_shadow_opacity= _resolve_subtitle_param(shadow_opacity,"shadow_opacity",int)
+    r_shadow_depth  = _resolve_subtitle_param(shadow_depth,  "shadow_depth",  int)
+    r_highlight_color = _resolve_subtitle_param(highlight_color, "highlight_color")
 
-    # Prepara cores
+    # Processa tags <highlight> no SRT antes de passar ao FFmpeg
+    try:
+        srt_content = srt_input.read_text(encoding="utf-8")
+        srt_processed = process_highlight_tags(srt_content, r_highlight_color, font_color, r_font_opacity)
+        srt_input.write_text(srt_processed, encoding="utf-8")
+    except Exception as e:
+        print(f"Warning: Could not process highlight tags in SRT: {e}")
 
-    primary_colour = color_to_ass(font_color)
+    # Prepara cores com suporte a opacidade
+    primary_colour     = color_to_ass(font_color, r_font_opacity)
+    outline_colour_ass = color_to_ass(outline_color, 100)
+    # Sombra: BackColour com opacidade configurável
+    shadow_colour_ass  = color_to_ass("#000000", r_shadow_opacity if r_shadow_enabled else 0)
 
-    outline_colour_ass = color_to_ass(outline_color)
+    # Bold: ativado quando font_weight >= 600
+    bold_flag = 1 if r_font_weight >= 600 else 0
 
-    
+    # Shadow depth: profundidade da sombra (0 = desligada)
+    shadow_value = r_shadow_depth if r_shadow_enabled else 0
 
-    # Lógica Simplificada:
-
-    # Alignment=2 (Base Central).
-
-    # MarginV define quantos pixels subir a partir da base.
-
-    alignment = 2 
-
-    margin_v = position_y 
-
-
+    # Alignment=2 (Base Central). MarginV define quantos pixels subir a partir da base.
+    alignment = 2
+    margin_v = position_y
 
     # Constrói o estilo forçado
-
-    # BorderStyle=1 (Outline + DropShadow básico)
-
+    # BorderStyle=1 (Outline + Shadow)
     force_style = (
-
+        f"Fontname={r_font_family},Bold={bold_flag},"
         f"Alignment={alignment},MarginV={margin_v},Fontsize={font_size},"
-
         f"PrimaryColour={primary_colour},OutlineColour={outline_colour_ass},"
-
-        "BorderStyle=1,Outline=1,Shadow=0"
-
+        f"BackColour={shadow_colour_ass},"
+        f"BorderStyle=1,Outline={r_border_width},Shadow={shadow_value}"
     )
 
     

@@ -298,6 +298,14 @@ async def add_subtitles_endpoint(
     font_color: str = Form("#FFFFFF"),
     outline_color: str = Form("#000000"),
     font_size: int = Form(24),
+    font_family: Optional[str] = Form(None),
+    font_weight: Optional[int] = Form(None),
+    border_width: Optional[int] = Form(None),
+    font_opacity: Optional[int] = Form(None),
+    shadow_enabled: Optional[bool] = Form(None),
+    shadow_opacity: Optional[int] = Form(None),
+    shadow_depth: Optional[int] = Form(None),
+    highlight_color: Optional[str] = Form(None),
     output_name: str = Form("video_subbed"),
     max_lines: Optional[int] = Form(None)
 ):
@@ -331,6 +339,14 @@ async def add_subtitles_endpoint(
             font_color=font_color,
             outline_color=outline_color,
             font_size=font_size,
+            font_family=font_family,
+            font_weight=font_weight,
+            border_width=border_width,
+            font_opacity=font_opacity,
+            shadow_enabled=shadow_enabled,
+            shadow_opacity=shadow_opacity,
+            shadow_depth=shadow_depth,
+            highlight_color=highlight_color,
             max_lines=max_lines
         )
         # ----------------------------
