@@ -1360,7 +1360,7 @@ _SUBTITLE_DEFAULTS = {
     "font_opacity":   100,
     "shadow_enabled": True,
     "shadow_opacity": 55,
-    "shadow_depth":   4,
+    "shadow_depth":   1,
     "highlight_color": "#FFD633",
 }
 
