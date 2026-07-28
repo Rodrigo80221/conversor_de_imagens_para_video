@@ -1015,43 +1015,36 @@ def color_to_ass(hex_color: str, opacity: int = 100) -> str:
 
 def process_highlight_tags(srt_text: str, highlight_color: str, font_color: str, font_opacity: int = 100) -> str:
     """
-    Converte tags <highlight>...</highlight> no texto SRT para formatação ASS inline.
+    Converte tags <highlight>...</highlight> no texto SRT para formatação HTML-like aceita nativamente pelo FFmpeg.
     """
     try:
-        print("=== DEBUG HIGHLIGHT TAGS ===")
-        print(f"Original highlight_color: {highlight_color}")
-        print(f"Original font_color: {font_color}")
-        print(f"Original SRT text preview (first 150 chars):\n{srt_text[:150]}")
+        # Apenas garante que a cor esteja no formato correto com a hashtag
+        if not highlight_color.startswith('#'):
+            highlight_color = f"#{highlight_color}"
+            
+        # Pega apenas a parte RGB caso venha com Alpha (#RRGGBBAA -> #RRGGBB)
+        rgb_color = highlight_color[:7]
+
+        # No formato SRT, a maneira mais segura e suportada nativamente pelo FFmpeg 
+        # para alterar cores inline é usar a tag <font color="#RRGGBB">
         
-        # Converte as cores para o formato ASS (&HAABBGGRR)
-        h_color_ass = color_to_ass(highlight_color, 100)
-        p_color_ass = color_to_ass(font_color, font_opacity)
-
-        # Para tags inline (\c), a sintaxe do ASS exige EXATAMENTE 6 dígitos hexadecimais (&HBBGGRR).
-        h_inline = "&H" + h_color_ass[-6:]
-        p_inline = "&H" + p_color_ass[-6:]
-
-        print(f"Converted h_inline: {h_inline}, p_inline: {p_inline}")
-
-        # Substitui a tag de abertura pela tag de cor ASS
+        # Substitui a tag de abertura
         result = re.sub(
             r'<\s*highlight\s*>',
-            lambda m: f'{{\\c{h_inline}}}',
+            lambda m: f'<font color="{rgb_color}">',
             srt_text,
             flags=re.IGNORECASE
         )
-        # Substitui a tag de fechamento pelo retorno à cor primária
+        # Substitui a tag de fechamento
         result = re.sub(
             r'<\s*/\s*highlight\s*>',
-            lambda m: f'{{\\c{p_inline}}}',
+            lambda m: '</font>',
             result,
             flags=re.IGNORECASE
         )
         # Remove qualquer tag malformada restante
         result = re.sub(r'<\s*/?\s*highlight[^>]*>', '', result, flags=re.IGNORECASE)
         
-        print(f"Processed SRT text preview (first 150 chars):\n{result[:150]}")
-        print("============================")
         return result
     except Exception as e:
         # Em caso de falha, remove as tags silenciosamente
