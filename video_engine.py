@@ -1022,20 +1022,26 @@ def process_highlight_tags(srt_text: str, highlight_color: str, font_color: str,
     - Permite múltiplos destaques na mesma linha.
     """
     try:
-        # Converte as cores para o formato ASS
+        # Converte as cores para o formato ASS (&HAABBGGRR)
         h_color_ass = color_to_ass(highlight_color, 100)
         p_color_ass = color_to_ass(font_color, font_opacity)
+
+        # Para tags inline (\c), a sintaxe do ASS exige EXATAMENTE 6 dígitos hexadecimais (&HBBGGRR).
+        # Se passarmos o formato com Alpha (8 dígitos), o libass (FFmpeg) ignora a tag inteira.
+        # Portanto, pegamos apenas os últimos 6 caracteres (BGR).
+        h_inline = "&H" + h_color_ass[-6:]
+        p_inline = "&H" + p_color_ass[-6:]
 
         # Substitui a tag de abertura pela tag de cor ASS
         result = re.sub(
             r'<highlight>',
-            lambda m: f'{{\\c{h_color_ass}}}',
+            lambda m: f'{{\\c{h_inline}}}',
             srt_text
         )
         # Substitui a tag de fechamento pelo retorno à cor primária
         result = re.sub(
             r'</highlight>',
-            lambda m: f'{{\\c{p_color_ass}}}',
+            lambda m: f'{{\\c{p_inline}}}',
             result
         )
         # Remove qualquer tag malformada restante (ex: <highlight sem fechamento)
