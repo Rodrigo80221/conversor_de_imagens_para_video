@@ -1034,18 +1034,20 @@ def process_highlight_tags(srt_text: str, highlight_color: str, font_color: str,
 
         # Substitui a tag de abertura pela tag de cor ASS
         result = re.sub(
-            r'<highlight>',
+            r'<\s*highlight\s*>',
             lambda m: f'{{\\c{h_inline}}}',
-            srt_text
+            srt_text,
+            flags=re.IGNORECASE
         )
         # Substitui a tag de fechamento pelo retorno à cor primária
         result = re.sub(
-            r'</highlight>',
+            r'<\s*/\s*highlight\s*>',
             lambda m: f'{{\\c{p_inline}}}',
-            result
+            result,
+            flags=re.IGNORECASE
         )
         # Remove qualquer tag malformada restante (ex: <highlight sem fechamento)
-        result = re.sub(r'</?highlight[^>]*>', '', result)
+        result = re.sub(r'<\s*/?\s*highlight[^>]*>', '', result, flags=re.IGNORECASE)
         return result
     except Exception as e:
         # Em caso de falha, remove as tags silenciosamente
