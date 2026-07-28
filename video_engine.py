@@ -1355,12 +1355,12 @@ def enforce_subtitle_pause(srt_path: Path, pause_ms: int):
 # Valores padrão para as configurações visuais de legendas
 _SUBTITLE_DEFAULTS = {
     "font_family":    "Poppins",
-    "font_weight":    600,
-    "border_width":   2,
+    "font_weight":    700,        # Negrito moderado
+    "border_width":   1,          # Contorno fino (estava muito grosso)
     "font_opacity":   100,
-    "shadow_enabled": True,
-    "shadow_opacity": 55,
-    "shadow_depth":   1,
+    "shadow_enabled": True,       # Ativamos uma sombra muito sutil
+    "shadow_opacity": 40,         # Sombra mais suave
+    "shadow_depth":   1,          # Leve descolamento para dar leitura sem borrar
     "highlight_color": "#FFD633",
 }
 
