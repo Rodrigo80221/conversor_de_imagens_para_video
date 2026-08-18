@@ -755,14 +755,17 @@ def merge_video_audio(
         if bg_idx != -1:
             # asetpts=N/SR/TB completely rewrites the timestamp cleanly so that 
             # when -stream_loop loops back to 0, amix doesn't drop the background audio!
-            fc.append(f"[{bg_idx}:a]asetpts=N/SR/TB[a_bg]")
+            # We set a base volume of 0.2 (20%) because raw background music is natively too loud.
+            fc.append(f"[{bg_idx}:a]volume=0.2,asetpts=N/SR/TB[a_bg]")
             audio_mix_parts.append("[a_bg]")
             
         # Mixagem
         if len(audio_mix_parts) == 2:
              # Ducking: comprime o volume do background baseado na narração
-             fc.append(f"[a_narr]asplit=2[narr_sc][narr_mix]")
-             fc.append(f"[a_bg][narr_sc]sidechaincompress=threshold=0.03:ratio=4:attack=50:release=500[bg_ducked]")
+             fc.append(f"[a_narr]asplit=2[narr_sc_orig][narr_mix]")
+             # Boost sidechain signal so even quiet narrations trigger the ducking effectively
+             fc.append(f"[narr_sc_orig]volume=5.0[narr_sc]")
+             fc.append(f"[a_bg][narr_sc]sidechaincompress=threshold=0.015:ratio=6:attack=40:release=800[bg_ducked]")
              fc.append(f"[narr_mix][bg_ducked]amix=inputs=2:duration=longest:normalize=0[a_mix]")
              fc.append(f"[a_mix]afade=t=out:st={start_fade}:d={fade_duration}[a_final]")
         elif len(audio_mix_parts) == 1:
