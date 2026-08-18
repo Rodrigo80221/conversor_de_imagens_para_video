@@ -222,8 +222,6 @@ async def merge_video_audio_endpoint(
     video_file: UploadFile = File(...),
     narration_file: Optional[UploadFile] = File(None),
     background_file: Optional[UploadFile] = File(None),
-    vol_narration: float = Form(1.0),
-    vol_background: float = Form(0.1),
     fade_duration: float = Form(2.0)
 ):
     temp_dir = tempfile.mkdtemp()
@@ -259,8 +257,6 @@ async def merge_video_audio_endpoint(
             output_file=Path(output_path),
             narration_input=Path(narration_path) if narration_path else None,
             background_input=Path(background_path) if background_path else None,
-            vol_narration=vol_narration,
-            vol_background=vol_background,
             fade_duration=fade_duration
         )
         
