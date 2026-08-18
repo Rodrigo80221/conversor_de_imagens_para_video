@@ -573,6 +573,22 @@ def get_audio_duration(filename: str) -> float:
 
 
 
+def get_audio_mean_volume(filename: str) -> float:
+    cmd = [
+        "ffmpeg", "-i", filename, 
+        "-af", "volumedetect", 
+        "-vn", "-sn", "-dn", 
+        "-f", "null", "/dev/null"
+    ]
+    try:
+        result = subprocess.run(cmd, stderr=subprocess.PIPE, text=True, check=True)
+        m = re.search(r'mean_volume:\s*([-0-9.]+)\s*dB', result.stderr)
+        if m:
+            return float(m.group(1))
+    except Exception as e:
+        print(f"Error getting volume for {filename}: {e}")
+    return -20.0
+
 def merge_video_audio(
 
     video_input: Path,
@@ -582,6 +598,10 @@ def merge_video_audio(
     narration_input: Optional[Path] = None,
 
     background_input: Optional[Path] = None,
+
+    vol_narration: float = 1.0,
+
+    vol_background: float = 0.1,
 
     fade_duration: float = 2.0
 
@@ -748,25 +768,38 @@ def merge_video_audio(
         
         if narr_idx != -1:
             # apad ensures narration stream doesn't end before the background or total_duration,
-            # preventing volume jumps or amix dropouts.
-            fc.append(f"[{narr_idx}:a]apad[a_narr]")
+            fc.append(f"[{narr_idx}:a]volume={vol_narration},apad[a_narr]")
             audio_mix_parts.append("[a_narr]")
             
         if bg_idx != -1:
-            # asetpts=N/SR/TB completely rewrites the timestamp cleanly so that 
-            # when -stream_loop loops back to 0, amix doesn't drop the background audio!
-            # We set a base volume of 0.2 (20%) because raw background music is natively too loud.
-            fc.append(f"[{bg_idx}:a]volume=0.2,asetpts=N/SR/TB[a_bg]")
+            # Automagic volume calculation
+            # We want the background music to have a steady, constant volume that sits nicely under the narration.
+            bg_mean = -20.0
+            if background_input:
+                bg_mean = get_audio_mean_volume(str(background_input))
+                
+            narr_mean = -20.0
+            if narration_input:
+                narr_mean = get_audio_mean_volume(str(narration_input))
+                
+            # Aim for background to be ~14 dB quieter than the narration track
+            target_bg_db = narr_mean - 14.0
+            
+            # If the user passed vol_background different than the default 0.1, 
+            # we can apply it as an additional offset or just rely on auto. 
+            # Since auto is requested, we compute the required gain to hit target_bg_db.
+            gain_db = target_bg_db - bg_mean
+            
+            # Cap the maximum boost to avoid distortion if background is extremely quiet
+            gain_db = min(gain_db, 2.0)
+            
+            fc.append(f"[{bg_idx}:a]volume={gain_db}dB,asetpts=N/SR/TB[a_bg]")
             audio_mix_parts.append("[a_bg]")
             
         # Mixagem
         if len(audio_mix_parts) == 2:
-             # Ducking: comprime o volume do background baseado na narração
-             fc.append(f"[a_narr]asplit=2[narr_sc_orig][narr_mix]")
-             # Boost sidechain signal so even quiet narrations trigger the ducking effectively
-             fc.append(f"[narr_sc_orig]volume=5.0[narr_sc]")
-             fc.append(f"[a_bg][narr_sc]sidechaincompress=threshold=0.015:ratio=6:attack=40:release=800[bg_ducked]")
-             fc.append(f"[narr_mix][bg_ducked]amix=inputs=2:duration=longest:normalize=0[a_mix]")
+             # Constant level mixing - no ducking, just perfectly balanced steady levels
+             fc.append(f"{''.join(audio_mix_parts)}amix=inputs=2:duration=longest:normalize=0[a_mix]")
              fc.append(f"[a_mix]afade=t=out:st={start_fade}:d={fade_duration}[a_final]")
         elif len(audio_mix_parts) == 1:
              # Só um audio, aplica fade direto
