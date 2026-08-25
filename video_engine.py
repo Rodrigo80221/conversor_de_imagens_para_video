@@ -123,6 +123,63 @@ def effect_filter(effect: Dict, w: int, h: int, fps: int, duration: float, idx: 
 
 
 
+    if etype == "cinematic_motion":
+        movement = effect.get("movement", "push_in")
+        intensity = effect.get("intensity", "medium")
+        
+        if intensity == "subtle":
+            z_max = 1.05
+        elif intensity == "strong":
+            z_max = 1.25
+        else: # medium
+            z_max = 1.15
+            
+        frames = max(1, int(round(duration * fps)))
+        
+        # Easing curve: easeInOutSine
+        E = f"(0.5*(1-cos(PI*(on/{frames}))))"
+        
+        if movement == "push_in":
+            z_expr = f"1.0+({z_max}-1.0)*{E}"
+            x_expr = "(iw-iw/zoom)/2"
+            y_expr = "(ih-ih/zoom)/2"
+        elif movement == "pull_out":
+            z_expr = f"{z_max}-({z_max}-1.0)*{E}"
+            x_expr = "(iw-iw/zoom)/2"
+            y_expr = "(ih-ih/zoom)/2"
+        elif movement == "pan_left":
+            z_expr = f"{z_max}"
+            x_expr = f"(iw-iw/zoom)*(1-{E})"
+            y_expr = "(ih-ih/zoom)/2"
+        elif movement == "pan_right":
+            z_expr = f"{z_max}"
+            x_expr = f"(iw-iw/zoom)*{E}"
+            y_expr = "(ih-ih/zoom)/2"
+        elif movement == "pan_up":
+            z_expr = f"{z_max}"
+            x_expr = "(iw-iw/zoom)/2"
+            y_expr = f"(ih-ih/zoom)*(1-{E})"
+        elif movement == "pan_down":
+            z_expr = f"{z_max}"
+            x_expr = "(iw-iw/zoom)/2"
+            y_expr = f"(ih-ih/zoom)*{E}"
+        elif movement == "diagonal_push":
+            z_expr = f"1.0+({z_max}-1.0)*{E}"
+            x_expr = f"(iw-iw/zoom)*{E}" 
+            y_expr = f"(ih-ih/zoom)*{E}"
+        else:
+            z_expr = f"1.0+({z_max}-1.0)*{E}"
+            x_expr = "(iw-iw/zoom)/2"
+            y_expr = "(ih-ih/zoom)/2"
+
+        return (
+            f"{base},"
+            f"zoompan=z='{z_expr}':"
+            f"x='{x_expr}':y='{y_expr}':"
+            f"d={frames}:s={w}x{h}:fps={fps},"
+            f"format=yuv420p"
+        )
+
     if etype == "fade":
 
         fin = effect.get("fade_in", {}) or {}
