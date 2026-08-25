@@ -193,8 +193,8 @@ def effect_filter(effect: Dict, w: int, h: int, fps: int, duration: float, idx: 
             
         frames = max(1, int(round(duration * fps)))
         
-        # Easing curve: easeInOutSine using t
-        E = f"(0.5*(1-cos(PI*(t/{duration}))))"
+        # Easing curve: easeInOutSine using 'in' (input frame number)
+        E = f"(0.5*(1-cos(PI*(in/{frames}))))"
         
         # O Shift maximo
         S = f"(max(W,H)*{shift_factor})"
@@ -226,7 +226,7 @@ def effect_filter(effect: Dict, w: int, h: int, fps: int, duration: float, idx: 
             x1 = f"(W + {S}*{E})"
             y1 = f"(0 - {S}*{E})"
             
-        perspective_expr = f"x0='{x0}':y0='{y0}':x1='{x1}':y1='{y1}':x2='{x2}':y2='{y2}':x3='{x3}':y3='{y3}'"
+        perspective_expr = f"x0='{x0}':y0='{y0}':x1='{x1}':y1='{y1}':x2='{x2}':y2='{y2}':x3='{x3}':y3='{y3}':eval=frame"
         
         return (
             f"{base},"
