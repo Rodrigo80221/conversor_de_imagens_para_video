@@ -7,3 +7,5 @@ openai-whisper
 openai-whisper
 torch
 html2image
+transformers
+Pillow

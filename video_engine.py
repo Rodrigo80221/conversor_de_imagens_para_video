@@ -22,6 +22,28 @@ import re
 
 import textwrap
 
+try:
+    from transformers import pipeline
+    from PIL import Image
+    DEPTH_ESTIMATOR = None
+except ImportError:
+    DEPTH_ESTIMATOR = None
+
+def get_depth_estimator():
+    global DEPTH_ESTIMATOR
+    if DEPTH_ESTIMATOR is None:
+        from transformers import pipeline
+        DEPTH_ESTIMATOR = pipeline("depth-estimation", model="depth-anything/Depth-Anything-V2-Small-hf")
+    return DEPTH_ESTIMATOR
+
+def generate_depth_map(image_path: Path, output_path: Path):
+    estimator = get_depth_estimator()
+    from PIL import Image
+    image = Image.open(image_path).convert("RGB")
+    depth = estimator(image)["depth"]
+    depth.save(output_path)
+
+
 
 
 COMMON_EXTS = [".png", ".jpg", ".jpeg", ".webp"]
@@ -231,6 +253,55 @@ def effect_filter(effect: Dict, w: int, h: int, fps: int, duration: float, idx: 
         return (
             f"{base},"
             f"perspective={perspective_expr},"
+            f"fps={fps},format=yuv420p"
+        )
+
+    if etype == "depth_parallax":
+        movement = effect.get("movement", "move_left")
+        intensity = effect.get("intensity", "medium")
+        depth_idx = effect.get("depth_input_idx")
+        
+        if intensity == "subtle":
+            disp = 10
+        elif intensity == "strong":
+            disp = 30
+        else:
+            disp = 20
+            
+        frames = max(1, int(round(duration * fps)))
+        
+        # Easing curve: easeInOutSine using 'N' for geq filter
+        E = f"(0.5*(1-cos(PI*(N/{frames}))))"
+        
+        factor_x = f"({disp}/(W/2))"
+        factor_y = f"({disp}/(H/2))"
+        
+        lum_expr = "128"
+        cb_expr = "128"
+        
+        if movement == "move_left":
+            lum_expr = f"128 + (p(X,Y)-128) * {factor_x} * {E}"
+        elif movement == "move_right":
+            lum_expr = f"128 - (p(X,Y)-128) * {factor_x} * {E}"
+        elif movement == "move_up":
+            cb_expr = f"128 + (p(X,Y)-128) * {factor_y} * {E}"
+        elif movement == "move_down":
+            cb_expr = f"128 - (p(X,Y)-128) * {factor_y} * {E}"
+        elif movement == "push_in":
+            lum_expr = f"128 + (p(X,Y)-128) * {factor_x} * {E}"
+            cb_expr = f"128 + (p(X,Y)-128) * {factor_y} * {E}"
+        elif movement == "pull_out":
+            lum_expr = f"128 - (p(X,Y)-128) * {factor_x} * {E}"
+            cb_expr = f"128 - (p(X,Y)-128) * {factor_y} * {E}"
+            
+        if not depth_idx:
+            return f"{base},fps={fps},format=yuv420p"
+            
+        return (
+            f"{base},format=yuv420p[img_{idx}];"
+            f"[{depth_idx}:v]scale={w}:{h}:force_original_aspect_ratio=increase,crop={w}:{h},format=yuv420p,"
+            f"geq=lum='{lum_expr}':cb='{cb_expr}':cr=128[depth_anim_{idx}];"
+            f"[img_{idx}][depth_anim_{idx}]displace=edge=wrap,"
             f"fps={fps},format=yuv420p"
         )
 
@@ -492,13 +563,26 @@ def build_ffmpeg_command(cfg: Dict, base_dir: Path, out_path: Path) -> List[str]
 
     cmd = ["ffmpeg", "-y"]
 
+    depth_maps = {}
+    extra_input_idx = len(input_files)
 
+    for i, item in enumerate(images):
+        eff = item.get("effect", {}) or {"type": "none"}
+        if eff.get("type") == "depth_parallax":
+            depth_file = base_dir / f"depth_{i}.png"
+            if not depth_file.exists():
+                generate_depth_map(input_files[i], depth_file)
+            depth_maps[i] = depth_file
+            eff["depth_input_idx"] = extra_input_idx
+            extra_input_idx += 1
 
     for img_file, dur in zip(input_files, durations):
-
         cmd += ["-loop", "1", "-framerate", str(fps), "-t", f"{dur}", "-i", str(img_file)]
 
-
+    for i in range(len(images)):
+        if i in depth_maps:
+            dur = durations[i]
+            cmd += ["-loop", "1", "-framerate", str(fps), "-t", f"{dur}", "-i", str(depth_maps[i])]
 
     fc_parts: List[str] = []
 
