@@ -180,6 +180,60 @@ def effect_filter(effect: Dict, w: int, h: int, fps: int, duration: float, idx: 
             f"format=yuv420p"
         )
 
+    if etype == "perspective_camera":
+        movement = effect.get("movement", "drift_right")
+        intensity = effect.get("intensity", "medium")
+        
+        if intensity == "subtle":
+            shift_factor = 0.05
+        elif intensity == "strong":
+            shift_factor = 0.15
+        else:
+            shift_factor = 0.10
+            
+        frames = max(1, int(round(duration * fps)))
+        
+        # Easing curve: easeInOutSine using t
+        E = f"(0.5*(1-cos(PI*(t/{duration}))))"
+        
+        # O Shift maximo
+        S = f"(max(W,H)*{shift_factor})"
+        
+        # 0: top-left, 1: top-right, 2: bottom-left, 3: bottom-right
+        x0, y0 = "0", "0"
+        x1, y1 = "W", "0"
+        x2, y2 = "0", "H"
+        x3, y3 = "W", "H"
+        
+        if movement == "drift_right": # Lado esquerdo expande
+            x0 = f"(0 - {S}*{E})"
+            y0 = f"(0 - {S}*{E})"
+            x2 = f"(0 - {S}*{E})"
+            y2 = f"(H + {S}*{E})"
+        elif movement == "drift_left": # Lado direito expande
+            x1 = f"(W + {S}*{E})"
+            y1 = f"(0 - {S}*{E})"
+            x3 = f"(W + {S}*{E})"
+            y3 = f"(H + {S}*{E})"
+        elif movement == "tilt_up": # Inferior expande
+            x2 = f"(0 - {S}*{E})"
+            y2 = f"(H + {S}*{E})"
+            x3 = f"(W + {S}*{E})"
+            y3 = f"(H + {S}*{E})"
+        elif movement == "tilt_down": # Superior expande
+            x0 = f"(0 - {S}*{E})"
+            y0 = f"(0 - {S}*{E})"
+            x1 = f"(W + {S}*{E})"
+            y1 = f"(0 - {S}*{E})"
+            
+        perspective_expr = f"x0='{x0}':y0='{y0}':x1='{x1}':y1='{y1}':x2='{x2}':y2='{y2}':x3='{x3}':y3='{y3}'"
+        
+        return (
+            f"{base},"
+            f"perspective={perspective_expr},"
+            f"fps={fps},format=yuv420p"
+        )
+
     if etype == "fade":
 
         fin = effect.get("fade_in", {}) or {}
