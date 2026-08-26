@@ -299,9 +299,10 @@ def effect_filter(effect: Dict, w: int, h: int, fps: int, duration: float, idx: 
             
         return (
             f"{base},format=yuv420p[img_{idx}];"
-            f"[{depth_idx}:v]scale={w}:{h}:force_original_aspect_ratio=increase,crop={w}:{h},format=yuv420p,"
-            f"geq=lum='{lum_expr}':cb='{cb_expr}':cr=128[depth_anim_{idx}];"
-            f"[img_{idx}][depth_anim_{idx}]displace=edge=wrap,"
+            f"[{depth_idx}:v]scale={w}:{h}:force_original_aspect_ratio=increase,crop={w}:{h},format=yuv420p,split=2[depth_x_{idx}][depth_y_{idx}];"
+            f"[depth_x_{idx}]geq=lum='{lum_expr}'[xmap_{idx}];"
+            f"[depth_y_{idx}]geq=lum='{cb_expr}'[ymap_{idx}];"
+            f"[img_{idx}][xmap_{idx}][ymap_{idx}]displace=edge=wrap,"
             f"fps={fps},format=yuv420p"
         )
 

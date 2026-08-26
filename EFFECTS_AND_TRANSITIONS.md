@@ -10,6 +10,9 @@ Define these in the `effect` object within each image item in your JSON configur
 | :--- | :--- | :--- | :--- |
 | **`none`** | Static image. | None | N/A |
 | **`zoom_slow`** | Ken Burns style slow zoom. | `zoom_start`<br>`zoom_end`<br>`zoom_step` | `1.0`<br>`1.15`<br>`0.0015` |
+| **`cinematic_motion`** | Cinematic motion with easing curves (ease in/out). | `movement`<br>`intensity` | `push_in`<br>`medium` |
+| **`perspective_camera`** | 3D perspective shift on corners for dynamic look. | `movement`<br>`intensity` | `drift_right`<br>`medium` |
+| **`depth_parallax`** | True 2.5D depth parallax using AI depth maps. | `movement`<br>`intensity` | `move_left`<br>`medium` |
 | **`fade`** | Fades the image in/out. | `fade_in` (obj)<br>`fade_out` (obj) | `start_time: 0.0`, `duration: 0.5` |
 | **`slide_horizontal`** | Reveals image horizontally via a gradient mask. | `direction` | `left_to_center`, `right_to_center`, `right_to_left`, `left_to_right` |
 | **`slide_vertical`** | Reveals image vertically via a gradient mask. | `direction` | `bottom_to_top`, `top_to_bottom` |
