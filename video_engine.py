@@ -262,47 +262,49 @@ def effect_filter(effect: Dict, w: int, h: int, fps: int, duration: float, idx: 
         depth_idx = effect.get("depth_input_idx")
         
         if intensity == "subtle":
-            disp = 10
+            factor = 0.04
         elif intensity == "strong":
-            disp = 30
+            factor = 0.20
         else:
-            disp = 20
+            factor = 0.10
             
         frames = max(1, int(round(duration * fps)))
         
         # Easing curve: easeInOutSine using 'n' for eq filter
         E = f"(0.5*(1-cos(PI*(n/{frames}))))"
         
-        factor_x = f"({disp}/({w}/2))"
-        factor_y = f"({disp}/({h}/2))"
-        
         cx_expr = "0"
         cy_expr = "0"
         
         if movement == "move_left":
-            cx_expr = f"{factor_x} * {E}"
+            cx_expr = f"{factor} * {E}"
         elif movement == "move_right":
-            cx_expr = f"-{factor_x} * {E}"
+            cx_expr = f"-{factor} * {E}"
         elif movement == "move_up":
-            cy_expr = f"{factor_y} * {E}"
+            cy_expr = f"{factor} * {E}"
         elif movement == "move_down":
-            cy_expr = f"-{factor_y} * {E}"
+            cy_expr = f"-{factor} * {E}"
         elif movement == "push_in":
-            cx_expr = f"{factor_x} * {E}"
-            cy_expr = f"{factor_y} * {E}"
+            cx_expr = f"{factor} * {E}"
+            cy_expr = f"{factor} * {E}"
         elif movement == "pull_out":
-            cx_expr = f"-{factor_x} * {E}"
-            cy_expr = f"-{factor_y} * {E}"
+            cx_expr = f"-{factor} * {E}"
+            cy_expr = f"-{factor} * {E}"
             
         if not depth_idx:
             return f"{base},fps={fps},format=yuv420p"
             
+        scale_factor = 1.0 + factor
+        sw = int(w * scale_factor)
+        sh = int(h * scale_factor)
+        
         return (
-            f"{base},format=yuv420p[img_{idx}];"
-            f"[{depth_idx}:v]scale={w}:{h}:force_original_aspect_ratio=increase,crop={w}:{h},format=yuv420p,split=2[depth_x_{idx}][depth_y_{idx}];"
+            f"scale={sw}:{sh}:force_original_aspect_ratio=increase,crop={sw}:{sh},format=yuv420p[img_{idx}];"
+            f"[{depth_idx}:v]scale={sw}:{sh}:force_original_aspect_ratio=increase,crop={sw}:{sh},format=yuv420p,split=2[depth_x_{idx}][depth_y_{idx}];"
             f"[depth_x_{idx}]eq=contrast='{cx_expr}':eval=frame[xmap_{idx}];"
             f"[depth_y_{idx}]eq=contrast='{cy_expr}':eval=frame[ymap_{idx}];"
-            f"[img_{idx}][xmap_{idx}][ymap_{idx}]displace=edge=wrap,"
+            f"[img_{idx}][xmap_{idx}][ymap_{idx}]displace=edge=smear,"
+            f"crop={w}:{h},"
             f"fps={fps},format=yuv420p"
         )
 
