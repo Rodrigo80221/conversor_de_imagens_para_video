@@ -270,29 +270,29 @@ def effect_filter(effect: Dict, w: int, h: int, fps: int, duration: float, idx: 
             
         frames = max(1, int(round(duration * fps)))
         
-        # Easing curve: easeInOutSine using 'N' for geq filter
-        E = f"(0.5*(1-cos(PI*(N/{frames}))))"
+        # Easing curve: easeInOutSine using 'n' for eq filter
+        E = f"(0.5*(1-cos(PI*(n/{frames}))))"
         
-        factor_x = f"({disp}/(W/2))"
-        factor_y = f"({disp}/(H/2))"
+        factor_x = f"({disp}/({w}/2))"
+        factor_y = f"({disp}/({h}/2))"
         
-        lum_expr = "128"
-        cb_expr = "128"
+        cx_expr = "0"
+        cy_expr = "0"
         
         if movement == "move_left":
-            lum_expr = f"128 + (p(X,Y)-128) * {factor_x} * {E}"
+            cx_expr = f"{factor_x} * {E}"
         elif movement == "move_right":
-            lum_expr = f"128 - (p(X,Y)-128) * {factor_x} * {E}"
+            cx_expr = f"-{factor_x} * {E}"
         elif movement == "move_up":
-            cb_expr = f"128 + (p(X,Y)-128) * {factor_y} * {E}"
+            cy_expr = f"{factor_y} * {E}"
         elif movement == "move_down":
-            cb_expr = f"128 - (p(X,Y)-128) * {factor_y} * {E}"
+            cy_expr = f"-{factor_y} * {E}"
         elif movement == "push_in":
-            lum_expr = f"128 + (p(X,Y)-128) * {factor_x} * {E}"
-            cb_expr = f"128 + (p(X,Y)-128) * {factor_y} * {E}"
+            cx_expr = f"{factor_x} * {E}"
+            cy_expr = f"{factor_y} * {E}"
         elif movement == "pull_out":
-            lum_expr = f"128 - (p(X,Y)-128) * {factor_x} * {E}"
-            cb_expr = f"128 - (p(X,Y)-128) * {factor_y} * {E}"
+            cx_expr = f"-{factor_x} * {E}"
+            cy_expr = f"-{factor_y} * {E}"
             
         if not depth_idx:
             return f"{base},fps={fps},format=yuv420p"
@@ -300,8 +300,8 @@ def effect_filter(effect: Dict, w: int, h: int, fps: int, duration: float, idx: 
         return (
             f"{base},format=yuv420p[img_{idx}];"
             f"[{depth_idx}:v]scale={w}:{h}:force_original_aspect_ratio=increase,crop={w}:{h},format=yuv420p,split=2[depth_x_{idx}][depth_y_{idx}];"
-            f"[depth_x_{idx}]geq=lum='{lum_expr}'[xmap_{idx}];"
-            f"[depth_y_{idx}]geq=lum='{cb_expr}'[ymap_{idx}];"
+            f"[depth_x_{idx}]eq=contrast='{cx_expr}':eval=frame[xmap_{idx}];"
+            f"[depth_y_{idx}]eq=contrast='{cy_expr}':eval=frame[ymap_{idx}];"
             f"[img_{idx}][xmap_{idx}][ymap_{idx}]displace=edge=wrap,"
             f"fps={fps},format=yuv420p"
         )
