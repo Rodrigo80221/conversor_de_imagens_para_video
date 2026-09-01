@@ -316,7 +316,9 @@ def effect_filter(effect: Dict, w: int, h: int, fps: int, duration: float, idx: 
         if not depth_idx:
             return f"{base},fps={fps},format=yuv420p"
             
-        scale_factor = 1.0 + factor
+        # Multiplicamos o factor por 2.1 para garantir que a margem (padding) gerada pelo scale 
+        # seja sempre superior ao deslocamento máximo do displace, evitando o "smearing" nas bordas.
+        scale_factor = 1.0 + (factor * 2.1)
         sw = int(w * scale_factor)
         sh = int(h * scale_factor)
         
