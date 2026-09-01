@@ -327,7 +327,7 @@ def effect_filter(effect: Dict, w: int, h: int, fps: int, duration: float, idx: 
             f"[{depth_idx}:v]scale={sw}:{sh}:force_original_aspect_ratio=increase,crop={sw}:{sh},format=yuv420p,split=2[depth_x_{idx}][depth_y_{idx}];"
             f"[depth_x_{idx}]eq=contrast='{cx_expr}':eval=frame[xmap_{idx}];"
             f"[depth_y_{idx}]eq=contrast='{cy_expr}':eval=frame[ymap_{idx}];"
-            f"[img_{idx}][xmap_{idx}][ymap_{idx}]displace=edge=smear,"
+            f"[img_{idx}][xmap_{idx}][ymap_{idx}]displace=edge=mirror,"
             f"crop={w}:{h},"
             f"fps={fps},format=yuv420p"
         )
