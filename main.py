@@ -164,6 +164,11 @@ async def generate_video(
         with open(cover_path, "wb") as f:
             f.write(await cover_file.read())
             
+        # Extract if it's a zip file
+        if cover_file.filename.lower().endswith('.zip'):
+            with zipfile.ZipFile(cover_path, 'r') as zip_ref:
+                zip_ref.extractall(temp_dir)
+            
         # Define output path
         output_filename = "output.mp4"
         output_path = os.path.join(temp_dir, output_filename)
