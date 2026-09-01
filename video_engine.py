@@ -78,9 +78,27 @@ def find_image_file(item: Dict, base_dir: Path) -> Path:
         if p_ext.exists():
             return p_ext
 
+    import re
+    match = re.search(r'\d+', img_id_base)
+    if match:
+        num = int(match.group())
+        variations = [num, num + 1]
+        for n in variations:
+            patterns = [
+                f"image_{n}",
+                f"img{n:02d}",
+                f"img{n}",
+                f"{n:02d}"
+            ]
+            for pat in patterns:
+                for ext in COMMON_EXTS:
+                    p_ext = base_dir / f"{pat}{ext}"
+                    if p_ext.exists():
+                        return p_ext
+
     raise FileNotFoundError(
         f"Não encontrei arquivo para '{img_id}'. "
-        f"Nomeie como img01.png/.jpg etc, ou use 'image_file' no JSON."
+        f"Nomeie como img01.png/.jpg, image_1.png etc, ou use 'image_file' no JSON."
     )
 
 
