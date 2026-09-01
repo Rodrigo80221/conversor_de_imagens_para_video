@@ -145,7 +145,8 @@ def cleanup_temp_dir(path: str):
 async def generate_video(
     background_tasks: BackgroundTasks,
     config: str = Form(...),
-    cover_file: UploadFile = File(...)
+    cover_file: UploadFile = File(...),
+    file: Optional[UploadFile] = File(None)
 ):
     try:
         config_data = json.loads(config)
@@ -164,10 +165,19 @@ async def generate_video(
         with open(cover_path, "wb") as f:
             f.write(await cover_file.read())
             
-        # Extract if it's a zip file
+        # Extract if it's a zip file (either in cover_file or file)
         if cover_file.filename.lower().endswith('.zip'):
             with zipfile.ZipFile(cover_path, 'r') as zip_ref:
                 zip_ref.extractall(temp_dir)
+                
+        # Handle the additional 'file' field sent by n8n
+        if file:
+            file_path = os.path.join(temp_dir, file.filename)
+            with open(file_path, "wb") as f:
+                f.write(await file.read())
+            if file.filename.lower().endswith('.zip'):
+                with zipfile.ZipFile(file_path, 'r') as zip_ref:
+                    zip_ref.extractall(temp_dir)
             
         # Define output path
         output_filename = "output.mp4"

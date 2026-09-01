@@ -96,9 +96,13 @@ def find_image_file(item: Dict, base_dir: Path) -> Path:
                     if p_ext.exists():
                         return p_ext
 
+    import os
+    arquivos_no_dir = os.listdir(base_dir) if base_dir.exists() else []
+    
     raise FileNotFoundError(
         f"Não encontrei arquivo para '{img_id}'. "
-        f"Nomeie como img01.png/.jpg, image_1.png etc, ou use 'image_file' no JSON."
+        f"Nomeie como img01.png/.jpg, image_1.png etc, ou use 'image_file' no JSON. "
+        f"Arquivos na pasta: {arquivos_no_dir}"
     )
 
 
