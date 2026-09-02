@@ -240,8 +240,27 @@ def effect_filter(effect: Dict, w: int, h: int, fps: int, duration: float, idx: 
         # Easing curve: easeInOutSine using 'in' (input frame number)
         E = f"(0.5*(1-cos(PI*(in/{frames}))))"
         
-        # O Shift maximo
-        S = f"(max(W,H)*{shift_factor})"
+        # CORREÇÃO 1: S calculado numericamente sobre dimensões finais originais
+        is_horizontal = movement in ["drift_right", "drift_left"]
+        S_px = w * shift_factor if is_horizontal else h * shift_factor
+        
+        # CORREÇÃO 2: Margem segura garantida para ambos os eixos (Overscan)
+        safety_factor = 1.10
+        required_margin = S_px * safety_factor
+        
+        zoom_x = 1 + (2 * required_margin / w)
+        zoom_y = 1 + (2 * required_margin / h)
+        zoom_factor = max(zoom_x, zoom_y)
+        
+        scale_w = int(round(w * zoom_factor))
+        scale_h = int(round(h * zoom_factor))
+        
+        # Manter resoluções pares
+        scale_w = scale_w if scale_w % 2 == 0 else scale_w + 1
+        scale_h = scale_h if scale_h % 2 == 0 else scale_h + 1
+        
+        # String explícita para o S no FFmpeg (duas casas decimais bastam)
+        S_str = f"{S_px:.2f}"
         
         # 0: top-left, 1: top-right, 2: bottom-left, 3: bottom-right
         x0, y0 = "0", "0"
@@ -250,31 +269,33 @@ def effect_filter(effect: Dict, w: int, h: int, fps: int, duration: float, idx: 
         x3, y3 = "W", "H"
         
         if movement == "drift_right": # Lado esquerdo expande
-            x0 = f"(0 - {S}*{E})"
-            y0 = f"(0 - {S}*{E})"
-            x2 = f"(0 - {S}*{E})"
-            y2 = f"(H + {S}*{E})"
+            x0 = f"(0 - {S_str}*{E})"
+            y0 = f"(0 - {S_str}*{E})"
+            x2 = f"(0 - {S_str}*{E})"
+            y2 = f"(H + {S_str}*{E})"
         elif movement == "drift_left": # Lado direito expande
-            x1 = f"(W + {S}*{E})"
-            y1 = f"(0 - {S}*{E})"
-            x3 = f"(W + {S}*{E})"
-            y3 = f"(H + {S}*{E})"
+            x1 = f"(W + {S_str}*{E})"
+            y1 = f"(0 - {S_str}*{E})"
+            x3 = f"(W + {S_str}*{E})"
+            y3 = f"(H + {S_str}*{E})"
         elif movement == "tilt_up": # Inferior expande
-            x2 = f"(0 - {S}*{E})"
-            y2 = f"(H + {S}*{E})"
-            x3 = f"(W + {S}*{E})"
-            y3 = f"(H + {S}*{E})"
+            x2 = f"(0 - {S_str}*{E})"
+            y2 = f"(H + {S_str}*{E})"
+            x3 = f"(W + {S_str}*{E})"
+            y3 = f"(H + {S_str}*{E})"
         elif movement == "tilt_down": # Superior expande
-            x0 = f"(0 - {S}*{E})"
-            y0 = f"(0 - {S}*{E})"
-            x1 = f"(W + {S}*{E})"
-            y1 = f"(0 - {S}*{E})"
+            x0 = f"(0 - {S_str}*{E})"
+            y0 = f"(0 - {S_str}*{E})"
+            x1 = f"(W + {S_str}*{E})"
+            y1 = f"(0 - {S_str}*{E})"
             
         perspective_expr = f"x0='{x0}':y0='{y0}':x1='{x1}':y1='{y1}':x2='{x2}':y2='{y2}':x3='{x3}':y3='{y3}':eval=frame"
         
         return (
             f"{base},"
+            f"scale={scale_w}:{scale_h}:flags=bilinear,"
             f"perspective={perspective_expr},"
+            f"crop={w}:{h}:(iw-{w})/2:(ih-{h})/2,"
             f"fps={fps},format=yuv420p"
         )
 
