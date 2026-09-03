@@ -1671,6 +1671,14 @@ def opacity_to_ass_alpha(opacity: int) -> str:
     alpha = int((100 - opacity) * 255 / 100)
     return f"&H{alpha:02X}&"
 
+def darken_hex(hex_color: str, factor: float = 0.5) -> str:
+    hex_color = hex_color.lstrip("#")
+    if len(hex_color) != 6: return "#808080"
+    r = int(int(hex_color[:2], 16) * factor)
+    g = int(int(hex_color[2:4], 16) * factor)
+    b = int(int(hex_color[4:6], 16) * factor)
+    return f"#{r:02X}{g:02X}{b:02X}"
+
 def parse_word_timestamps(data: str):
     words = []
     try:
@@ -1720,11 +1728,15 @@ def create_karaoke_line(line_text, line_start, line_end, words_list, highlight_c
 
     normal_c = hex_to_ass_color(font_color)
     high_c = hex_to_ass_color(highlight_color)
-    primary_alpha = opacity_to_ass_alpha(font_opacity)
-    secondary_alpha = opacity_to_ass_alpha(int(font_opacity * 0.4))
     
-    normal_tags = f"{{\\c{normal_c}\\1a{primary_alpha}\\2c{normal_c}\\2a{secondary_alpha}}}"
-    high_tags = f"{{\\c{high_c}\\1a{primary_alpha}\\2c{high_c}\\2a{secondary_alpha}}}"
+    normal_2c = hex_to_ass_color(darken_hex(font_color, 0.4))
+    high_2c = hex_to_ass_color(darken_hex(highlight_color, 0.4))
+    
+    primary_alpha = opacity_to_ass_alpha(font_opacity)
+    secondary_alpha = primary_alpha
+    
+    normal_tags = f"{{\\c{normal_c}\\1a{primary_alpha}\\2c{normal_2c}\\2a{secondary_alpha}}}"
+    high_tags = f"{{\\c{high_c}\\1a{primary_alpha}\\2c{high_2c}\\2a{secondary_alpha}}}"
     
     def to_ass_time(t):
         h = int(t // 3600)
@@ -1780,11 +1792,12 @@ def generate_ass_karaoke(
     out_c = hex_to_ass_color(outline_color)
     out_alpha = opacity_to_ass_alpha(100)
     
-    def style_color(c, a): return a.replace('&H', '') + c.replace('&H', '').replace('&', '')
+    def style_color(c, a): 
+        return a.replace('&H', '').replace('&', '') + c.replace('&H', '').replace('&', '')
     
     primary_style = f"&H{style_color(style_c, style_alpha)}"
-    secondary_alpha = opacity_to_ass_alpha(int(font_opacity * 0.4))
-    secondary_style = f"&H{style_color(style_c, secondary_alpha)}"
+    style_2c = hex_to_ass_color(darken_hex(font_color, 0.4))
+    secondary_style = f"&H{style_color(style_2c, style_alpha)}"
     outline_style = f"&H{style_color(out_c, out_alpha)}"
     shadow_alpha = opacity_to_ass_alpha(shadow_opacity if shadow_enabled else 0)
     shadow_style = f"&H{style_color(hex_to_ass_color('#000000'), shadow_alpha)}"
