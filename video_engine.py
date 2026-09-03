@@ -1730,7 +1730,8 @@ def create_karaoke_line(line_text, line_start, line_end, words_list, highlight_c
     high_c = hex_to_ass_color(highlight_color)
     
     normal_2c = hex_to_ass_color(darken_hex(font_color, 0.4))
-    high_2c = hex_to_ass_color(darken_hex(highlight_color, 0.4))
+    # Palavras destacadas inativas ficam com a mesma cor das normais inativas (surpresa ao falar)
+    high_2c = normal_2c
     
     primary_alpha = opacity_to_ass_alpha(font_opacity)
     secondary_alpha = primary_alpha
