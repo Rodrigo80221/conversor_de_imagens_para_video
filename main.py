@@ -312,7 +312,8 @@ async def add_subtitles_endpoint(
     shadow_depth: Optional[int] = Form(None),
     highlight_color: Optional[str] = Form(None),
     output_name: str = Form("video_subbed"),
-    max_lines: Optional[int] = Form(None)
+    max_lines: Optional[int] = Form(None),
+    word_timestamps: Optional[str] = Form(None)
 ):
     temp_dir = tempfile.mkdtemp()
     try:
@@ -352,7 +353,8 @@ async def add_subtitles_endpoint(
             shadow_opacity=shadow_opacity,
             shadow_depth=shadow_depth,
             highlight_color=highlight_color,
-            max_lines=max_lines
+            max_lines=max_lines,
+            word_timestamps=word_timestamps
         )
         # ----------------------------
         

@@ -1660,7 +1660,168 @@ def _resolve_subtitle_param(value, key: str, cast_type=None):
     if isinstance(value, str) and value.strip() == "":
         return default
     return value
+def hex_to_ass_color(hex_color: str) -> str:
+    hex_color = hex_color.lstrip("#")
+    if len(hex_color) != 6: return "&HFFFFFF&"
+    r, g, b = hex_color[:2], hex_color[2:4], hex_color[4:]
+    return f"&H{b}{g}{r}&"
 
+def opacity_to_ass_alpha(opacity: int) -> str:
+    opacity = max(0, min(100, opacity))
+    alpha = int((100 - opacity) * 255 / 100)
+    return f"&H{alpha:02X}&"
+
+def parse_word_timestamps(data: str):
+    words = []
+    try:
+        obj = json.loads(data)
+        if isinstance(obj, list):
+            for item in obj:
+                word = item.get('word') or item.get('text')
+                start = item.get('start') or item.get('start_time')
+                end = item.get('end') or item.get('end_time')
+                if word is not None and start is not None and end is not None:
+                    words.append({"word": word.strip(), "start": float(start), "end": float(end)})
+            if words: return words
+    except: pass
+    blocks = data.strip().replace('\r\n', '\n').replace('\r', '\n').split('\n\n')
+    for block in blocks:
+        lines = block.strip().split('\n')
+        if len(lines) >= 3:
+            time_line = lines[1] if '-->' in lines[1] else lines[0] if '-->' in lines[0] else None
+            if time_line:
+                try:
+                    s_str, e_str = time_line.split('-->')
+                    start = parse_timestamp(s_str.strip())
+                    end = parse_timestamp(e_str.strip())
+                    word_text = " ".join(lines[2:] if '-->' in lines[1] else lines[1:]).strip()
+                    words.append({"word": word_text, "start": start, "end": end})
+                except: pass
+    return words
+
+def create_karaoke_line(line_text, line_start, line_end, words_list, highlight_color, font_color, font_opacity):
+    line_words = [w for w in words_list if line_start - 0.1 <= (w['start'] + w['end'])/2 <= line_end + 0.1]
+    parts = re.split(r'(\s+)', line_text)
+    chunks = [i for i, p in enumerate(parts) if p.strip()]
+    
+    if len(chunks) == len(line_words) and len(chunks) > 0:
+        word_timings = line_words
+    else:
+        def clean_len(s): return len(re.sub(r'<[^>]+>', '', s))
+        total_chars = sum(clean_len(parts[i]) for i in chunks)
+        if total_chars == 0: total_chars = 1
+        duration = line_end - line_start
+        current_t = line_start
+        word_timings = []
+        for i in chunks:
+            w_dur = duration * (clean_len(parts[i]) / total_chars)
+            word_timings.append({"start": current_t, "end": current_t + w_dur})
+            current_t += w_dur
+
+    normal_c = hex_to_ass_color(font_color)
+    high_c = hex_to_ass_color(highlight_color)
+    primary_alpha = opacity_to_ass_alpha(font_opacity)
+    secondary_alpha = opacity_to_ass_alpha(int(font_opacity * 0.4))
+    
+    normal_tags = f"{{\\c{normal_c}\\1a{primary_alpha}\\2c{normal_c}\\2a{secondary_alpha}}}"
+    high_tags = f"{{\\c{high_c}\\1a{primary_alpha}\\2c{high_c}\\2a{secondary_alpha}}}"
+    
+    def to_ass_time(t):
+        h = int(t // 3600)
+        m = int((t % 3600) // 60)
+        s = int(t % 60)
+        cs = int(round((t - int(t)) * 100))
+        if cs >= 100:
+            s += 1; cs -= 100
+        if s >= 60:
+            m += 1; s -= 60
+        return f"{h}:{m:02d}:{s:02d}.{cs:02d}"
+
+    current_time = line_start
+    for idx, chunk_idx in enumerate(chunks):
+        w_start = word_timings[idx]['start']
+        w_end = word_timings[idx]['end']
+        
+        delay_sec = w_start - current_time
+        if delay_sec < 0: delay_sec = 0
+        delay_cs = int(round(delay_sec * 100))
+        
+        dur_sec = w_end - w_start
+        if dur_sec < 0: dur_sec = 0
+        dur_cs = int(round(dur_sec * 100))
+        
+        current_time = w_end
+        chunk_text = parts[chunk_idx]
+        is_highlight = bool(re.search(r'<highlight>', chunk_text, re.IGNORECASE))
+        clean_chunk = re.sub(r'</?highlight[^>]*>', '', chunk_text, flags=re.IGNORECASE)
+        
+        tags = high_tags if is_highlight else normal_tags
+        k_delay = f"{{\\k{delay_cs}}}" if delay_cs > 0 else ""
+        k_dur = f"{{\\k{dur_cs}}}"
+        
+        parts[chunk_idx] = f"{k_delay}{tags}{k_dur}{clean_chunk}"
+        
+    joined = "".join(parts).replace('\n', '\\N')
+    return f"Dialogue: 0,{to_ass_time(line_start)},{to_ass_time(line_end)},Default,,0,0,0,,{joined}"
+
+def generate_ass_karaoke(
+    video_width: int, video_height: int, srt_input: Path, word_timestamps_str: str,
+    output_ass: Path, position_y: int, font_color: str, outline_color: str,
+    font_size: int, font_family: str, font_weight: int, border_width: int,
+    font_opacity: int, shadow_enabled: bool, shadow_opacity: int,
+    shadow_depth: int, highlight_color: str
+):
+    words_list = parse_word_timestamps(word_timestamps_str)
+    bold_flag = 1 if font_weight >= 600 else 0
+    shadow_val = shadow_depth if shadow_enabled else 0
+    
+    style_c = hex_to_ass_color(font_color)
+    style_alpha = opacity_to_ass_alpha(font_opacity)
+    out_c = hex_to_ass_color(outline_color)
+    out_alpha = opacity_to_ass_alpha(100)
+    
+    def style_color(c, a): return a.replace('&H', '') + c.replace('&H', '').replace('&', '')
+    
+    primary_style = f"&H{style_color(style_c, style_alpha)}"
+    secondary_alpha = opacity_to_ass_alpha(int(font_opacity * 0.4))
+    secondary_style = f"&H{style_color(style_c, secondary_alpha)}"
+    outline_style = f"&H{style_color(out_c, out_alpha)}"
+    shadow_alpha = opacity_to_ass_alpha(shadow_opacity if shadow_enabled else 0)
+    shadow_style = f"&H{style_color(hex_to_ass_color('#000000'), shadow_alpha)}"
+    
+    alignment = 2
+    margin_v = position_y
+    
+    ass_lines = [
+        "[Script Info]", "ScriptType: v4.00+", f"PlayResX: {video_width}", f"PlayResY: {video_height}", "WrapStyle: 1", "",
+        "[V4+ Styles]",
+        "Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding",
+        f"Style: Default,{font_family},{font_size},{primary_style},{secondary_style},{outline_style},{shadow_style},{bold_flag},0,0,0,100,100,0,0,1,{border_width},{shadow_val},{alignment},0,0,{margin_v},1",
+        "", "[Events]", "Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text"
+    ]
+    
+    content = srt_input.read_text(encoding='utf-8').replace('\r\n', '\n').replace('\r', '\n')
+    blocks = content.strip().split('\n\n')
+    
+    for block in blocks:
+        lines = block.strip().split('\n')
+        if len(lines) < 2: continue
+        time_line_idx = -1
+        for i, line in enumerate(lines):
+            if "-->" in line:
+                time_line_idx = i
+                break
+        if time_line_idx == -1: continue
+        try:
+            start_str, end_str = lines[time_line_idx].split(' --> ')
+            start_t = parse_timestamp(start_str.strip())
+            end_t = parse_timestamp(end_str.strip())
+        except: continue
+        line_text = "\n".join(lines[time_line_idx + 1:])
+        dialogue = create_karaoke_line(line_text, start_t, end_t, words_list, highlight_color, font_color, font_opacity)
+        ass_lines.append(dialogue)
+        
+    output_ass.write_text("\n".join(ass_lines), encoding='utf-8')
 
 def add_subtitles(
     video_input: Path,
@@ -1680,19 +1841,10 @@ def add_subtitles(
     shadow_opacity: Optional[int] = None,
     shadow_depth: Optional[int] = None,
     highlight_color: Optional[str] = None,
+    word_timestamps: Optional[str] = None,
 ):
-
-    
-
-    # Calculate approx max chars based on video width
-
-    # We try to wrap before ffmpeg does.
-
-    # Default fallback
-
     max_chars = 40 
-
-    
+    w, h = 1080, 1920
 
     try:
 
@@ -1736,51 +1888,54 @@ def add_subtitles(
     r_shadow_depth  = _resolve_subtitle_param(shadow_depth,  "shadow_depth",  int)
     r_highlight_color = _resolve_subtitle_param(highlight_color, "highlight_color")
 
-    # Processa tags <highlight> no SRT antes de passar ao FFmpeg
-    try:
-        srt_content = srt_input.read_text(encoding="utf-8")
-        srt_processed = process_highlight_tags(srt_content, r_highlight_color, font_color, r_font_opacity)
-        srt_input.write_text(srt_processed, encoding="utf-8")
-    except Exception as e:
-        print(f"Warning: Could not process highlight tags in SRT: {e}")
+    # Processa tags <highlight> ou gera ASS Karaoke
+    if word_timestamps:
+        ass_file = srt_input.with_suffix('.ass')
+        generate_ass_karaoke(
+            w, h, srt_input, word_timestamps, ass_file,
+            position_y, font_color, outline_color, font_size,
+            r_font_family, r_font_weight, r_border_width,
+            r_font_opacity, r_shadow_enabled, r_shadow_opacity,
+            r_shadow_depth, r_highlight_color
+        )
+        srt_filename = ass_file.name
+        vf_arg = f"subtitles='{srt_filename}'"
+    else:
+        try:
+            srt_content = srt_input.read_text(encoding="utf-8")
+            srt_processed = process_highlight_tags(srt_content, r_highlight_color, font_color, r_font_opacity)
+            srt_input.write_text(srt_processed, encoding="utf-8")
+        except Exception as e:
+            print(f"Warning: Could not process highlight tags in SRT: {e}")
 
-    # Prepara cores com suporte a opacidade
-    primary_colour     = color_to_ass(font_color, r_font_opacity)
-    outline_colour_ass = color_to_ass(outline_color, 100)
-    # Sombra: BackColour com opacidade configurável
-    shadow_colour_ass  = color_to_ass("#000000", r_shadow_opacity if r_shadow_enabled else 0)
+        # Prepara cores com suporte a opacidade
+        primary_colour     = color_to_ass(font_color, r_font_opacity)
+        outline_colour_ass = color_to_ass(outline_color, 100)
+        # Sombra: BackColour com opacidade configurável
+        shadow_colour_ass  = color_to_ass("#000000", r_shadow_opacity if r_shadow_enabled else 0)
 
-    # Bold: ativado quando font_weight >= 600
-    bold_flag = 1 if r_font_weight >= 600 else 0
+        # Bold: ativado quando font_weight >= 600
+        bold_flag = 1 if r_font_weight >= 600 else 0
 
-    # Shadow depth: profundidade da sombra (0 = desligada)
-    shadow_value = r_shadow_depth if r_shadow_enabled else 0
+        # Shadow depth: profundidade da sombra (0 = desligada)
+        shadow_value = r_shadow_depth if r_shadow_enabled else 0
 
-    # Alignment=2 (Base Central). MarginV define quantos pixels subir a partir da base.
-    alignment = 2
-    margin_v = position_y
+        # Alignment=2 (Base Central). MarginV define quantos pixels subir a partir da base.
+        alignment = 2
+        margin_v = position_y
 
-    # Constrói o estilo forçado
-    # BorderStyle=1 (Outline + Shadow)
-    force_style = (
-        f"Fontname={r_font_family},Bold={bold_flag},"
-        f"Alignment={alignment},MarginV={margin_v},Fontsize={font_size},"
-        f"PrimaryColour={primary_colour},OutlineColour={outline_colour_ass},"
-        f"BackColour={shadow_colour_ass},"
-        f"BorderStyle=1,Outline={r_border_width},Shadow={shadow_value}"
-    )
+        # Constrói o estilo forçado
+        # BorderStyle=1 (Outline + Shadow)
+        force_style = (
+            f"Fontname={r_font_family},Bold={bold_flag},"
+            f"Alignment={alignment},MarginV={margin_v},Fontsize={font_size},"
+            f"PrimaryColour={primary_colour},OutlineColour={outline_colour_ass},"
+            f"BackColour={shadow_colour_ass},"
+            f"BorderStyle=1,Outline={r_border_width},Shadow={shadow_value}"
+        )
 
-    
-
-    print(f"DEBUG: Aplicando legendas com MarginV={margin_v} (Distância do fundo)")
-
-
-
-    # Escapar nome do arquivo para o filtro
-
-    srt_filename = srt_input.name
-
-    vf_arg = f"subtitles='{srt_filename}':force_style='{force_style}'"
+        srt_filename = srt_input.name
+        vf_arg = f"subtitles='{srt_filename}':force_style='{force_style}'"
 
 
 
