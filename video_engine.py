@@ -1793,7 +1793,7 @@ def generate_ass_karaoke(
     margin_v = position_y
     
     ass_lines = [
-        "[Script Info]", "ScriptType: v4.00+", f"PlayResX: {video_width}", f"PlayResY: {video_height}", "WrapStyle: 1", "",
+        "[Script Info]", "ScriptType: v4.00+", "PlayResX: 384", "PlayResY: 288", "WrapStyle: 1", "",
         "[V4+ Styles]",
         "Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding",
         f"Style: Default,{font_family},{font_size},{primary_style},{secondary_style},{outline_style},{shadow_style},{bold_flag},0,0,0,100,100,0,0,1,{border_width},{shadow_val},{alignment},0,0,{margin_v},1",
