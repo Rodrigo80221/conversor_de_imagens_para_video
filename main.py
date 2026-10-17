@@ -19,8 +19,10 @@ import html_img_engine
 from starlette.concurrency import run_in_threadpool
 import base64
 import mimetypes
+from image_api import router as image_router
 
 app = FastAPI()
+app.include_router(image_router)
 
 @app.get("/check-chrome")
 def check_chrome():

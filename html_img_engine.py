@@ -16,6 +16,8 @@ class HtmlImageEngine:
                 "--disable-gpu",
                 "--hide-scrollbars",
                 "--headless=new",
+                # Allow layout/fonts to finish before the screenshot is captured.
+                "--virtual-time-budget=3000",
             ]
 
             # 1) Preferir variável de ambiente (determinístico)
