@@ -6,7 +6,7 @@ from pathlib import Path
 import tempfile
 import unittest
 import zipfile
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 from fastapi import FastAPI, HTTPException
 from fastapi.testclient import TestClient
@@ -100,6 +100,20 @@ class BatchImageTests(unittest.TestCase):
         with zipfile.ZipFile(io.BytesIO(result.content)) as archive:
             manifest=json.loads(archive.read('manifest.json'))
             self.assertEqual([i['technology'] for i in manifest['images']],['gemini','openai','html'])
+
+    @patch('image_api.requests.request')
+    def test_comfyui_batch_needs_no_provider_key(self, http):
+        finished={'job-1':{'status':{'completed':True,'status_str':'success'},
+                 'outputs':{'9':{'images':[{'filename':'preview.png','subfolder':'','type':'temp'}]}}}}
+        http.side_effect=[response({'prompt_id':'job-1'}),response(finished),
+                          Mock(status_code=200,content=PNG)]
+        result=self.post({'defaults':{'technology':'comfyui','size':'512x512','seed':7},
+                          'images':[{'prompt':'local generation'}]})
+        self.assertEqual(result.status_code,200)
+        self.assertEqual(result.headers['content-type'],'application/zip')
+        with zipfile.ZipFile(io.BytesIO(result.content)) as archive:
+            self.assertEqual(archive.namelist(),['image_1.png'])
+            self.assertEqual(archive.read('image_1.png'),PNG)
 
     @patch('image_api.requests.request')
     def test_failure_stops_batch_and_removes_archive(self, http):

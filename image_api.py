@@ -4,8 +4,11 @@ import binascii
 import io
 import os
 import json
+import math
+import secrets
 import shutil
 import tempfile
+import time
 import zipfile
 from pathlib import Path
 from typing import Literal, Optional
@@ -39,7 +42,7 @@ class ReferenceImage(StrictModel):
 
 class ImageOptions(StrictModel):
     company: Optional[str] = Field(default=None, description="google, openai ou local")
-    technology: Literal["gemini", "chatgpt", "openai", "html"] = "gemini"
+    technology: Literal["gemini", "chatgpt", "openai", "comfyui", "html"] = "gemini"
     model: Optional[str] = Field(default=None, pattern=r"^[A-Za-z0-9._-]+$", max_length=150)
     api_key: Optional[SecretStr] = None
     prompt: Optional[str] = Field(default=None, max_length=32000)
@@ -50,6 +53,8 @@ class ImageOptions(StrictModel):
     image_size: Optional[Literal["1K", "2K", "4K"]] = None
     size: str = Field(default="auto", pattern=r"^(auto|[1-9][0-9]{2,3}x[1-9][0-9]{2,3})$")
     quality: Literal["auto", "low", "medium", "high"] = "auto"
+    seed: Optional[int] = Field(default=None, ge=0, le=18_446_744_073_709_551_615)
+    steps: Optional[int] = Field(default=None, ge=1, le=100)
     html: Optional[str] = Field(default=None, max_length=1_000_000)
     css: str = Field(default="", max_length=500_000)
     width: int = Field(default=1080, ge=64, le=4096)
@@ -61,14 +66,15 @@ class GenerateImageRequest(ImageOptions):
 
     @model_validator(mode="after")
     def combinations(self):
-        expected = {"gemini": "google", "chatgpt": "openai", "openai": "openai", "html": "local"}[self.technology]
+        expected = {"gemini": "google", "chatgpt": "openai", "openai": "openai",
+                    "comfyui": "local", "html": "local"}[self.technology]
         if self.company and self.company.lower() != expected:
             raise ValueError(f"company deve ser {expected} para esta technology.")
         self.company = expected
         if self.technology == "html":
             if not self.html:
                 raise ValueError("html e obrigatorio para technology=html.")
-            if self.reference_images or self.model or self.prompt or self.on_screen_text:
+            if self.reference_images or self.model or self.prompt or self.on_screen_text or self.seed is not None or self.steps is not None:
                 raise ValueError("HTML recebe html/css prontos; nao recebe prompt, modelo ou referencias.")
         else:
             if not self.prompt:
@@ -79,6 +85,14 @@ class GenerateImageRequest(ImageOptions):
             raise ValueError("OpenAI usa size em pixels; image_size e exclusivo do Gemini.")
         if self.technology == "gemini" and (self.size != "auto" or self.quality != "auto"):
             raise ValueError("Gemini usa aspect_ratio/image_size; size/quality sao da OpenAI.")
+        if self.technology != "comfyui" and (self.seed is not None or self.steps is not None):
+            raise ValueError("seed/steps sao exclusivos do ComfyUI.")
+        if self.technology == "comfyui":
+            if self.reference_images:
+                raise ValueError("O workflow ComfyUI Z-Image-Turbo atual nao aceita imagens de referencia.")
+            if self.image_size or self.quality != "auto":
+                raise ValueError("ComfyUI usa aspect_ratio ou size; image_size/quality nao se aplicam.")
+            comfyui_dimensions(self)
         return self
 
 
@@ -239,9 +253,118 @@ def openai_image(req, key, refs, prompt):
     return decode_image(items[0]["b64_json"], 502), model
 
 
+def comfyui_dimensions(req):
+    if req.size != "auto":
+        width, height = (int(value) for value in req.size.split("x", 1))
+        if width % 16 or height % 16 or not 256 <= width <= 2048 or not 256 <= height <= 2048:
+            raise ValueError("Para ComfyUI, size deve usar multiplos de 16 entre 256 e 2048.")
+        return width, height
+
+    numerator, denominator = (int(value) for value in req.aspect_ratio.split(":", 1))
+    ratio = numerator / denominator
+    if not 0.25 <= ratio <= 4:
+        raise ValueError("Para ComfyUI, aspect_ratio deve ficar entre 1:4 e 4:1.")
+    target_pixels = 1024 * 1024
+    width = math.sqrt(target_pixels * ratio)
+    height = math.sqrt(target_pixels / ratio)
+    if max(width, height) > 1536:
+        scale = 1536 / max(width, height)
+        width *= scale
+        height *= scale
+    width = max(256, int(round(width / 16)) * 16)
+    height = max(256, int(round(height / 16)) * 16)
+    return width, height
+
+
+def comfyui_headers():
+    client_id = os.getenv("COMFYUI_ACCESS_CLIENT_ID", "").strip()
+    client_secret = os.getenv("COMFYUI_ACCESS_CLIENT_SECRET", "").strip()
+    if bool(client_id) != bool(client_secret):
+        raise HTTPException(500, "Configure juntos COMFYUI_ACCESS_CLIENT_ID e COMFYUI_ACCESS_CLIENT_SECRET.")
+    if not client_id:
+        return {}
+    return {"CF-Access-Client-Id": client_id, "CF-Access-Client-Secret": client_secret}
+
+
+def comfyui_workflow(prompt, width, height, seed, steps, model):
+    clip_model = os.getenv("COMFYUI_CLIP_MODEL", "qwen_3_4b.safetensors").strip()
+    vae_model = os.getenv("COMFYUI_VAE_MODEL", "ae.safetensors").strip()
+    return {
+        "28": {"class_type": "UNETLoader", "inputs": {"unet_name": model, "weight_dtype": "default"}},
+        "30": {"class_type": "CLIPLoader", "inputs": {"clip_name": clip_model, "type": "lumina2", "device": "default"}},
+        "29": {"class_type": "VAELoader", "inputs": {"vae_name": vae_model}},
+        "27": {"class_type": "CLIPTextEncode", "inputs": {"text": prompt, "clip": ["30", 0]}},
+        "33": {"class_type": "ConditioningZeroOut", "inputs": {"conditioning": ["27", 0]}},
+        "11": {"class_type": "ModelSamplingAuraFlow", "inputs": {"model": ["28", 0], "shift": 3.0}},
+        "13": {"class_type": "EmptySD3LatentImage", "inputs": {"width": width, "height": height, "batch_size": 1}},
+        "3": {"class_type": "KSampler", "inputs": {
+            "model": ["11", 0], "seed": seed, "steps": steps, "cfg": 1.0,
+            "sampler_name": "res_multistep", "scheduler": "simple",
+            "positive": ["27", 0], "negative": ["33", 0], "latent_image": ["13", 0], "denoise": 1.0}},
+        "8": {"class_type": "VAEDecode", "inputs": {"samples": ["3", 0], "vae": ["29", 0]}},
+        "9": {"class_type": "PreviewImage", "inputs": {"images": ["8", 0]}},
+    }
+
+
+def comfyui_image(req, _key, _refs, prompt):
+    base_url = os.getenv("COMFYUI_BASE_URL", "https://comfyui.progridai.com.br").strip().rstrip("/")
+    if not base_url.startswith(("https://", "http://")):
+        raise HTTPException(500, "COMFYUI_BASE_URL deve ser uma URL HTTP(S).")
+    model = req.model or os.getenv("COMFYUI_MODEL", "z_image_turbo_bf16.safetensors").strip()
+    if model in ("z-image-turbo", "z_image_turbo"):
+        model = "z_image_turbo_bf16.safetensors"
+    width, height = comfyui_dimensions(req)
+    seed = req.seed if req.seed is not None else secrets.randbelow(2**63)
+    steps = req.steps or 8
+    headers = comfyui_headers()
+    workflow = comfyui_workflow(prompt, width, height, seed, steps, model)
+    queued = request_json("POST", f"{base_url}/prompt", "comfyui_queue", headers=headers,
+                          json={"prompt": workflow, "client_id": secrets.token_hex(16)})
+    prompt_id = queued.get("prompt_id")
+    if not isinstance(prompt_id, str) or not prompt_id or len(prompt_id) > 200:
+        raise HTTPException(502, {"stage": "comfyui_queue", "message": "ComfyUI nao retornou prompt_id valido."})
+
+    try:
+        timeout_seconds = min(900, max(30, int(os.getenv("COMFYUI_TIMEOUT_SECONDS", "300"))))
+    except ValueError:
+        raise HTTPException(500, "COMFYUI_TIMEOUT_SECONDS deve ser um numero inteiro.") from None
+    deadline = time.monotonic() + timeout_seconds
+    image_info = None
+    while time.monotonic() < deadline:
+        history = request_json("GET", f"{base_url}/history/{prompt_id}", "comfyui_history", headers=headers)
+        item = history.get(prompt_id)
+        if isinstance(item, dict):
+            status = item.get("status", {})
+            output = item.get("outputs", {}).get("9", {})
+            images = output.get("images", []) if isinstance(output, dict) else []
+            if images and isinstance(images[0], dict):
+                image_info = images[0]
+                break
+            if status.get("completed") or status.get("status_str") in ("error", "failed"):
+                raise HTTPException(502, {"stage": "comfyui_generation", "message": "ComfyUI concluiu sem imagem."})
+        time.sleep(1)
+    if image_info is None:
+        raise HTTPException(504, {"stage": "comfyui_generation", "message": "Tempo limite aguardando o ComfyUI."})
+
+    params = {key: image_info.get(key, "") for key in ("filename", "subfolder", "type")}
+    if not params["filename"]:
+        raise HTTPException(502, {"stage": "comfyui_result", "message": "ComfyUI retornou arquivo invalido."})
+    try:
+        response = requests.request("GET", f"{base_url}/view", params=params, headers=headers, timeout=(15, 60))
+        if not 200 <= response.status_code < 300:
+            raise HTTPException(502, {"stage": "comfyui_result", "upstream_status": response.status_code})
+        data = response.content
+    except requests.Timeout:
+        raise HTTPException(504, {"stage": "comfyui_result", "message": "Tempo limite baixando a imagem."}) from None
+    except requests.RequestException:
+        raise HTTPException(502, {"stage": "comfyui_result", "message": "Falha ao baixar a imagem."}) from None
+    inspect_image(data, 502)
+    return data, model
+
+
 # Register new providers here without changing the HTTP contract or the n8n flow.
 PROVIDERS = {"gemini": (gemini, "GEMINI_API_KEY"), "chatgpt": (openai_image, "OPENAI_API_KEY"),
-             "openai": (openai_image, "OPENAI_API_KEY")}
+             "openai": (openai_image, "OPENAI_API_KEY"), "comfyui": (comfyui_image, None)}
 
 
 def render_image(req: GenerateImageRequest):
@@ -258,7 +381,7 @@ def render_image(req: GenerateImageRequest):
         model = None
     else:
         adapter, env = PROVIDERS[req.technology]
-        key = credential(req.api_key, env)
+        key = credential(req.api_key, env) if env else None
         data, model = adapter(req, key, references(req), build_prompt(req))
     mime, (width, height) = inspect_image(data, 502)
     filename = "generated_image." + {"image/png": "png", "image/jpeg": "jpg", "image/webp": "webp"}[mime]
@@ -272,7 +395,9 @@ def generate_batch(req: BatchImageRequest):
     for index, item in enumerate(req._requests, start=int(req.skip_first)):
         try:
             if item.technology != "html":
-                credential(item.api_key, PROVIDERS[item.technology][1])
+                env = PROVIDERS[item.technology][1]
+                if env:
+                    credential(item.api_key, env)
             for ref in item.reference_images:
                 if ref.base64:
                     decode_image(ref.base64)

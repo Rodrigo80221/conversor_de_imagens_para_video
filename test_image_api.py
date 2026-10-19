@@ -66,6 +66,29 @@ class ImageApiTests(unittest.TestCase):
         self.assertTrue(http.call_args.args[1].endswith("/images/edits"))
         self.assertEqual(http.call_args.kwargs["files"][0][0], "image[]")
 
+    @patch("image_api.requests.request")
+    def test_comfyui_z_image_workflow_and_result(self, http):
+        finished = {"job-1": {"status": {"completed": True, "status_str": "success"},
+                               "outputs": {"9": {"images": [{"filename": "preview.png",
+                                                                "subfolder": "", "type": "temp"}]}}}}
+        image_response = Mock(status_code=200, content=PNG)
+        http.side_effect = [response({"prompt_id": "job-1"}), response(finished), image_response]
+
+        result = self.post(technology="comfyui", api_key=None, model="z-image-turbo",
+                           size="768x1344", seed=42, steps=8)
+
+        self.assertEqual(result.status_code, 200)
+        self.assertEqual(result.content, PNG)
+        self.assertEqual(http.call_count, 3)
+        queue_call = http.call_args_list[0]
+        self.assertEqual(queue_call.args[:2], ("POST", "https://comfyui.progridai.com.br/prompt"))
+        workflow = queue_call.kwargs["json"]["prompt"]
+        self.assertEqual(workflow["28"]["inputs"]["unet_name"], "z_image_turbo_bf16.safetensors")
+        self.assertEqual(workflow["27"]["inputs"]["text"], "A landscape")
+        self.assertEqual(workflow["13"]["inputs"], {"width": 768, "height": 1344, "batch_size": 1})
+        self.assertEqual(workflow["3"]["inputs"]["seed"], 42)
+        self.assertEqual(http.call_args_list[-1].kwargs["params"]["type"], "temp")
+
     def test_html_reuses_renderer_and_cleans_temp_dir(self):
         paths = []
         def render(html, css, width, height, output_path):
@@ -107,7 +130,10 @@ class ImageApiTests(unittest.TestCase):
                  {"reference_images": [{"url": "https://example.com", "base64": B64}]},
                  {"reference_images": [{"base64": "not base64"}]},
                  {"technology": "html"}, {"model": "../other"}, {"typo": 1},
-                 {"baserow": {"table_id": 12}}, {"technology": "chatgpt", "image_size": "2K"}]
+                 {"baserow": {"table_id": 12}}, {"technology": "chatgpt", "image_size": "2K"},
+                 {"technology": "gemini", "steps": 8},
+                 {"technology": "comfyui", "reference_images": [{"base64": B64}]},
+                 {"technology": "comfyui", "size": "769x1344"}]
         for case in cases:
             with self.subTest(case=case):
                 self.assertEqual(self.post(**case).status_code, 422)

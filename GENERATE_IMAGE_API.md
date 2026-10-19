@@ -10,6 +10,12 @@ Variaveis de ambiente (somente para os caminhos usados):
 
 - `GEMINI_API_KEY`: chave Google AI Studio.
 - `OPENAI_API_KEY`: chave da API OpenAI.
+- `COMFYUI_BASE_URL`: opcional; padrao `https://comfyui.progridai.com.br`.
+- `COMFYUI_TIMEOUT_SECONDS`: espera total do job local; padrao 300, limite 30-900.
+- `COMFYUI_MODEL`, `COMFYUI_CLIP_MODEL`, `COMFYUI_VAE_MODEL`: opcionais; os
+  padroes correspondem ao workflow Z-Image-Turbo instalado.
+- `COMFYUI_ACCESS_CLIENT_ID` e `COMFYUI_ACCESS_CLIENT_SECRET`: opcionais e devem
+  ser configuradas juntas caso o endereco seja protegido por Cloudflare Access.
 - `CHROME_BIN`: ja configurado no Dockerfile para renderizar HTML.
 
 Tambem e possivel enviar `api_key` no JSON. Eles prevalecem
@@ -22,6 +28,7 @@ O endpoint usa Pydantic 2, FastAPI, requests, Pillow e o html2image existente.
 |---|---|---|
 | `google` | `gemini` | padrao `gemini-3-pro-image-preview`, como no fluxo original |
 | `openai` | `chatgpt` ou `openai` | padrao `gpt-image-1`; aceita modelos GPT Image compativeis |
+| `local` | `comfyui` | padrao `z_image_turbo_bf16.safetensors` |
 | `local` | `html` | omitir |
 
 `company` e opcional, inferida de `technology`; combinacoes divergentes retornam 422.
@@ -87,6 +94,31 @@ enviada no download. Gemini recebe inlineData; OpenAI usa a rota de edicao.
 da OpenAI; as dimensoes reais sao controladas por `size` e pelo modelo.
 Nao ha corte/redimensionamento automatico para 9:16.
 
+## ComfyUI local (Z-Image-Turbo)
+
+```json
+{
+  "company": "local",
+  "technology": "comfyui",
+  "prompt": "Retrato cinematografico de uma nutricionista em uma cozinha moderna",
+  "aspect_ratio": "9:16",
+  "seed": 42,
+  "steps": 8,
+  "response_format": "binary"
+}
+```
+
+O servidor enfileira o workflow oficial Z-Image-Turbo no ComfyUI, aguarda o job
+e baixa a imagem temporaria. `seed` e `steps` sao opcionais e exclusivos do
+ComfyUI; o padrao e seed aleatoria e 8 passos. `size` pode ser `auto` ou uma
+dimensao explicita, por exemplo `768x1344`. Dimensoes explicitas devem ser
+multiplos de 16, entre 256 e 2048. Com `size=auto`, a API calcula dimensoes a
+partir de `aspect_ratio`.
+
+O workflow instalado e somente texto-para-imagem e rejeita `reference_images`.
+O computador, o ComfyUI na porta 8188 e o Cloudflare Tunnel precisam estar
+online. Nao envie `api_key`: esse provedor usa a URL configurada no servidor.
+
 ## HTML/CSS existente
 
 ```json
@@ -119,8 +151,8 @@ agora retorna 422. Use o fluxo V3 com esta versao da API.
 - `binary` (padrao): bytes da imagem, MIME detectado e nome de download.
 - `base64`: JSON com metadados e `base64` (sem prefixo data URI).
 - 422: parametros/credenciais ausentes, combinacao invalida ou referencia invalida.
-- 502: falha no provedor, download ou resposta sem imagem.
-- 504: timeout na chamada de geracao.
+- 502: falha no provedor, fila/download do ComfyUI ou resposta sem imagem.
+- 504: timeout na chamada de geracao ou aguardando o job do ComfyUI.
 - 500: falha do renderizador HTML.
 
 Chamadas externas de geracao: timeout de conexao 15s e leitura 180s.
@@ -134,6 +166,7 @@ de geracao no n8n apos timeout. Nao registra nem devolve chaves em erros externo
 - `structure.scenes[0].on_screen_text` -> `on_screen_text`.
 - `actor_ref=true` -> preencher `reference_images` e usar `prompt_style=raw`.
 - `generation_technology=html` -> `technology=html`, `Images[0].html/css`, `width/height`.
+- `generation_technology=comfyui` -> `technology=comfyui`; nao enviar chave ou referencia.
 - Imagem sem ator -> `prompt_style=reel_cover`.
 - ID de historico -> node Baserow no n8n, fora da API.
 

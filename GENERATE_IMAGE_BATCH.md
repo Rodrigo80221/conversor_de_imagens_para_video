@@ -74,6 +74,7 @@ implicitamente. Lote vazio (inclusive depois do descarte) retorna 422.
   "images": [
     {"technology": "gemini", "model": "gemini-3-pro-image-preview", "prompt": "Uma floresta"},
     {"technology": "chatgpt", "model": "gpt-image-1", "prompt": "Uma praia", "size": "1024x1536"},
+    {"technology": "comfyui", "prompt": "Uma cidade futurista", "size": "768x1344", "steps": 8},
     {"technology": "html", "html": "<h1>Conclusao</h1>", "css": "h1{font-size:96px}"}
   ]
 }
@@ -83,6 +84,8 @@ Nesse exemplo, configure GEMINI_API_KEY e OPENAI_API_KEY no servidor, ou envie
 `api_key` em cada item. Nao compartilhe uma chave Google em defaults se houver
 itens OpenAI sem sua propria chave. Em lotes mistos, prefira informar empresa,
 modelo e parametros especificos em cada item.
+Itens `comfyui` nao exigem `api_key`; usam `COMFYUI_BASE_URL` do servidor e sao
+executados sequencialmente como os demais. O computador local precisa estar online.
 
 A heranca e literal: `reference_images: []` remove referencias comuns;
 `model: null`, `company: null` e `image_size: null` removem esses valores de defaults.
@@ -96,6 +99,7 @@ limpe-os no item. Nenhum parametro incompatível e descartado silenciosamente.
 - Ator: o n8n resolve o ID no Baserow e fornece a URL em `reference_images`
   somente nos itens correspondentes (nao em todas as cenas).
 - HTML salvo em `Images[]` -> `images[]`, com `technology=html`, html/css e dimensoes.
+- Cena local -> `technology=comfyui`, com `aspect_ratio` ou `size` e sem referencia.
 - Capa: excluir antes de enviar ou usar `skip_first=true`, nunca ambos.
 - Receber o ZIP como arquivo e fazer upload/atualizacao no Baserow pelo n8n.
 
