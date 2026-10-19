@@ -1,0 +1,177 @@
+{
+  "version": "1",
+  "width": 1080,
+  "height": 1920,
+  "fps": 30,
+  "audio": "original",
+  "typography": {
+    "font_profile": "original"
+  },
+  "shots": [
+    {
+      "source": "VID_20260505_043206461.mp4",
+      "start": 4,
+      "duration": 2.8,
+      "speed": 1,
+      "caption": "",
+      "title": "P A R I S",
+      "subtitle": "N O S S A   C H E G A D A"
+    },
+    {
+      "source": "VID_20260505_072314603.mp4",
+      "start": 35,
+      "duration": 2.1,
+      "speed": 1,
+      "caption": ""
+    },
+    {
+      "source": "IMG_6478.HEIC",
+      "start": 0,
+      "duration": 2.6,
+      "speed": 1,
+      "caption": "",
+      "photo_zoom": 1.02695
+    },
+    {
+      "source": "20260505_181214_aefe7420.mp4",
+      "start": 1,
+      "duration": 2.8,
+      "speed": 1,
+      "caption": "Paris sob a chuva",
+      "kicker": "P A R I S  /  F R A N Ç A"
+    },
+    {
+      "source": "IMG_6599.MOV",
+      "start": 1.7,
+      "duration": 3.3,
+      "speed": 0.85,
+      "caption": "Torre Eiffel",
+      "kicker": "P A R I S  /  F R A N Ç A",
+      "transition_to_next": {
+        "type": "dissolve",
+        "duration": 0.3
+      }
+    },
+    {
+      "source": "IMG_6609.HEIC",
+      "start": 0,
+      "duration": 3.1,
+      "speed": 1,
+      "caption": "Torre Eiffel",
+      "kicker": "P A R I S  /  F R A N Ç A",
+      "photo_zoom": 1.0322
+    },
+    {
+      "source": "IMG_6625.MP4",
+      "start": 0.25,
+      "duration": 2.7,
+      "speed": 0.85,
+      "caption": "Torre Eiffel",
+      "kicker": "P A R I S  /  F R A N Ç A",
+      "crop_x": 1
+    },
+    {
+      "source": "IMG_6644.MOV",
+      "start": 0.3,
+      "duration": 2.7,
+      "speed": 1,
+      "caption": "Rio Sena",
+      "kicker": "P A R I S  /  F R A N Ç A"
+    },
+    {
+      "source": "IMG_6657.MOV",
+      "start": 0.3,
+      "duration": 2.4,
+      "speed": 0.9,
+      "caption": "Às margens do Sena",
+      "kicker": "P A R I S  /  F R A N Ç A"
+    },
+    {
+      "source": "20260505_191450_cf83b19b.mp4",
+      "start": 3.8,
+      "duration": 3.2,
+      "speed": 0.85,
+      "caption": "Ponte Alexandre III",
+      "kicker": "P A R I S  /  F R A N Ç A",
+      "transition_to_next": {
+        "type": "dissolve",
+        "duration": 0.3
+      }
+    },
+    {
+      "source": "IMG_6698.HEIC",
+      "start": 0,
+      "duration": 3.3,
+      "speed": 1,
+      "caption": "Petit Palais",
+      "kicker": "P A R I S  /  F R A N Ç A",
+      "photo_zoom": 1.0343
+    },
+    {
+      "source": "IMG_6703.MOV",
+      "start": 2,
+      "duration": 2.7,
+      "speed": 1,
+      "caption": "Champs-Élysées",
+      "kicker": "P A R I S  /  F R A N Ç A"
+    },
+    {
+      "source": "IMG_6721.MOV",
+      "start": 0.2,
+      "duration": 2.8,
+      "speed": 1,
+      "caption": "Arco do Triunfo",
+      "kicker": "P A R I S  /  F R A N Ç A"
+    },
+    {
+      "source": "IMG_6745.MOV",
+      "start": 4,
+      "duration": 2.6,
+      "speed": 1,
+      "caption": "Arco do Triunfo",
+      "kicker": "P A R I S  /  F R A N Ç A"
+    },
+    {
+      "source": "IMG_6750.mov",
+      "start": 3,
+      "duration": 2.7,
+      "speed": 1,
+      "caption": "Rio Sena • ao anoitecer",
+      "kicker": "P A R I S  /  F R A N Ç A",
+      "transition_to_next": {
+        "type": "dissolve",
+        "duration": 0.3
+      }
+    },
+    {
+      "source": "IMG_6757.HEIC",
+      "start": 0,
+      "duration": 3.5,
+      "speed": 1,
+      "caption": "Torre Eiffel",
+      "kicker": "P A R I S  /  F R A N Ç A",
+      "photo_zoom": 1.0364
+    },
+    {
+      "source": "IMG_6772.MP4",
+      "start": 0.15,
+      "duration": 2.5,
+      "speed": 0.75,
+      "caption": "Torre Eiffel",
+      "kicker": "P A R I S  /  F R A N Ç A",
+      "transition_to_next": {
+        "type": "dissolve",
+        "duration": 0.3
+      }
+    },
+    {
+      "source": "IMG_6778.MOV",
+      "start": 3.6,
+      "duration": 4.7,
+      "speed": 0.85,
+      "caption": "Torre Eiffel",
+      "kicker": "P A R I S  /  F R A N Ç A",
+      "closing": "Só o começo."
+    }
+  ]
+}

@@ -10,3 +10,4 @@ torch
 html2image
 transformers
 Pillow
+-r video_editing/requirements.txt

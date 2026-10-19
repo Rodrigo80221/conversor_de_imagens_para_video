@@ -40,6 +40,7 @@ ENV CHROME_BIN=/usr/bin/chromium
 WORKDIR /app
 
 COPY requirements.txt .
+COPY video_editing/requirements.txt video_editing/requirements.txt
 RUN pip install --no-cache-dir --upgrade pip && \
     pip install --no-cache-dir -r requirements.txt
 

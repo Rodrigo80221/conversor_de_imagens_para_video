@@ -20,9 +20,11 @@ from starlette.concurrency import run_in_threadpool
 import base64
 import mimetypes
 from image_api import router as image_router
+from video_editing.api import router as video_editing_router
 
 app = FastAPI()
 app.include_router(image_router)
+app.include_router(video_editing_router)
 
 @app.get("/check-chrome")
 def check_chrome():

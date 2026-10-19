@@ -1,0 +1,18 @@
+[
+  {
+    "file": "LibreBaskerville.ttf",
+    "source": "https://raw.githubusercontent.com/google/fonts/main/ofl/librebaskerville/LibreBaskerville%5Bwght%5D.ttf"
+  },
+  {
+    "file": "librebaskerville-OFL.txt",
+    "source": "https://raw.githubusercontent.com/google/fonts/main/ofl/librebaskerville/OFL.txt"
+  },
+  {
+    "file": "SourceSans3.ttf",
+    "source": "https://raw.githubusercontent.com/google/fonts/main/ofl/sourcesans3/SourceSans3%5Bwght%5D.ttf"
+  },
+  {
+    "file": "sourcesans3-OFL.txt",
+    "source": "https://raw.githubusercontent.com/google/fonts/main/ofl/sourcesans3/OFL.txt"
+  }
+]
