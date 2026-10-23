@@ -46,7 +46,7 @@ Define these in the `transition_to_next` object.
 
 | Transition Type | Description | Parameters |
 | :--- | :--- | :--- |
-| **`none`** | Instant cut. | `None` |
+| **`none`** / **`cut`** | Instant cut (sem transição). | `None` (ou `duration: 0`) |
 | **`xfade`** | FFmpeg xfade transitions. | `transition` (string)<br>`duration` (float) |
 | **`slide`** | Slides the next image in over the current one. | `direction` (`left`, `right`, `up`, `down`) |
 | **`wipe`** | Clean sweep reveal. | `direction` (`left`, `right`, `up`, `down`) |

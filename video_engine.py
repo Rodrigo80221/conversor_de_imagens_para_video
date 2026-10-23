@@ -672,11 +672,13 @@ def build_ffmpeg_command(cfg: Dict, base_dir: Path, out_path: Path) -> List[str]
         t = transitions[i] or {}
         ttype = t.get("type", "xfade")
 
-        if ttype == "none":
+        if ttype in ("none", "cut"):
             td = 0.05
             trans = "fade"
         else:
             td = float(t.get("duration", 0.5))
+            if td <= 0:
+                td = 0.05
             trans = "fade"
 
         offset = max(0.0, current_len - td)
@@ -744,7 +746,7 @@ def build_ffmpeg_command(cfg: Dict, base_dir: Path, out_path: Path) -> List[str]
             cur_mod = f"czc_{i}"
             nxt_mod = f"czn_{i}"
             trans = "zoomin"
-        elif ttype != "none":
+        elif ttype not in ("none", "cut"):
             trans = t.get("transition", "fade")
 
         fc_parts.append(
