@@ -67,8 +67,11 @@ audioPlayer.src = playbackUrl;
 Use os booleans do estado dos seus quatro controles para preencher cada campo:
 `form.append('trim_start', String(config.trim_start))`, por exemplo.
 O Nina Labs pode reproduzir, baixar ou salvar o Blob retornado como preferir.
-Se a API estiver em outro dominio, o acesso deve usar o proxy/CORS configurado
-na infraestrutura da aplicacao.
+O endpoint `/process-voice` permite CORS sem credenciais para o frontend web.
+Por padrao aceita qualquer origem; para restringir, configure `VOICE_ALLOWED_ORIGINS`
+com as origens separadas por virgula (incluindo esquema e porta, quando houver).
+O middleware se aplica somente a este endpoint e expoe os cabecalhos de duracao
+e cortes. Publique a versao com `voice_cors.py` para ativar no servidor.
 
 ## Entrada, saida e execucao
 
