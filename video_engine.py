@@ -1,4 +1,5 @@
 import subprocess
+from subtitle_timing import validate_srt_timings
 
 import json
 
@@ -1859,6 +1860,15 @@ def add_subtitles(
     highlight_color: Optional[str] = None,
     word_timestamps: Optional[str] = None,
 ):
+    # Validate before reflow/highlights can obscure a malformed timing interval.
+    content = srt_input.read_text(encoding='utf-8')
+    validate_srt_timings(content)
+    duration_probe = subprocess.run(
+        ['ffprobe', '-v', 'error', '-show_entries', 'format=duration', '-of', 'json', str(video_input)],
+        capture_output=True, text=True, check=True, timeout=30)
+    duration_value = json.loads(duration_probe.stdout).get('format', {}).get('duration')
+    if duration_value is not None:
+        validate_srt_timings(content, float(duration_value))
     max_chars = 40 
     w, h = 1080, 1920
 

@@ -1,4 +1,5 @@
-from fastapi import FastAPI, UploadFile, File, Form, BackgroundTasks
+from fastapi import FastAPI, UploadFile, File, Form, BackgroundTasks, HTTPException
+from subtitle_timing import SubtitleTimingError, validate_srt_timings
 from pydantic import BaseModel
 from typing import Optional, List
 from enum import Enum
@@ -323,6 +324,10 @@ async def add_subtitles_endpoint(
     max_lines: Optional[int] = Form(None),
     word_timestamps: Optional[str] = Form(None)
 ):
+    try:
+        validate_srt_timings(subtitle_content)
+    except SubtitleTimingError as exc:
+        raise HTTPException(422, detail={'message': str(exc), 'cue': exc.cue}) from None
     temp_dir = tempfile.mkdtemp()
     try:
         # Save video
@@ -377,6 +382,9 @@ async def add_subtitles_endpoint(
             filename=output_name
         )
 
+    except SubtitleTimingError as exc:
+        shutil.rmtree(temp_dir, ignore_errors=True)
+        raise HTTPException(422, detail={'message': str(exc), 'cue': exc.cue}) from None
     except Exception as e:
         shutil.rmtree(temp_dir)
         return {"error": str(e)}
